@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:http/http.dart' as http;
 
 import '../services/preferences_manager.dart';
-import 'compare_provider_http_session_logger.dart';
+import 'speed_provider_http_session_logger.dart';
 import 'logging_globals.dart';
 import 'speed_limit_api_request_logger.dart';
 import 'speed_limit_api_session_counter.dart';
@@ -91,7 +91,7 @@ class SpeedLimitHttpLogInterceptor {
     String note,
   ) {
     if (prefs == null) return;
-    CompareProviderHttpSessionLogger.recordIfApplicable(
+    SpeedProviderHttpSessionLogger.recordIfApplicable(
       preferencesManager: prefs,
       category: category,
       method: method,

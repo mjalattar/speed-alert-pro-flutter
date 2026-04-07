@@ -1,5 +1,12 @@
-/// Virtual route “lead” ahead of the vehicle for HERE / compare APIs (meters).
+/// Virtual route “lead” ahead of the vehicle for routing APIs (HERE / TomTom / Mapbox) (meters).
 const double kAlertRouteLeadMeters = 1000.0;
+
+/// Which vendor supplies the **main** speed limit for display + alerts ([PreferencesManager.primarySpeedLimitProvider]).
+abstract final class SpeedLimitPrimaryProvider {
+  static const int here = 0;
+  static const int tomTom = 1;
+  static const int mapbox = 2;
+}
 
 /// Below this GPS speed (mph), optional suppression of alerts can apply.
 const double kLowSpeedAlertSuppressBelowMph = 15.0;

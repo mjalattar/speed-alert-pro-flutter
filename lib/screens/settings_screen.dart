@@ -242,11 +242,51 @@ class SettingsScreen extends ConsumerWidget {
             },
           ),
           Text(
-            'API providers',
+            'Main speed limit (display + alerts)',
+            style: Theme.of(context).textTheme.titleSmall,
+          ),
+          RadioListTile<int>(
+            title: const Text('HERE Maps'),
+            subtitle: const Text(
+              'Local REST or Supabase Edge (see “Speed limit data source” above).',
+            ),
+            value: SpeedLimitPrimaryProvider.here,
+            groupValue: preferencesManager.primarySpeedLimitProvider,
+            onChanged: (v) {
+              if (v != null) {
+                preferencesManager.primarySpeedLimitProvider = v;
+                ref.read(prefsRevisionProvider.notifier).state++;
+              }
+            },
+          ),
+          RadioListTile<int>(
+            title: const Text('TomTom'),
+            value: SpeedLimitPrimaryProvider.tomTom,
+            groupValue: preferencesManager.primarySpeedLimitProvider,
+            onChanged: (v) {
+              if (v != null) {
+                preferencesManager.primarySpeedLimitProvider = v;
+                ref.read(prefsRevisionProvider.notifier).state++;
+              }
+            },
+          ),
+          RadioListTile<int>(
+            title: const Text('Mapbox'),
+            value: SpeedLimitPrimaryProvider.mapbox,
+            groupValue: preferencesManager.primarySpeedLimitProvider,
+            onChanged: (v) {
+              if (v != null) {
+                preferencesManager.primarySpeedLimitProvider = v;
+                ref.read(prefsRevisionProvider.notifier).state++;
+              }
+            },
+          ),
+          Text(
+            'API providers (enable keys you need; main limit uses resolved choice above if enabled)',
             style: Theme.of(context).textTheme.titleSmall,
           ),
           SwitchListTile(
-            title: const Text('HERE (alerts)'),
+            title: const Text('HERE Maps'),
             value: preferencesManager.isHereApiEnabled,
             onChanged: (v) {
               preferencesManager.isHereApiEnabled = v;
@@ -254,8 +294,8 @@ class SettingsScreen extends ConsumerWidget {
             },
           ),
           SwitchListTile(
-            title: const Text('TomTom (compare)'),
-            subtitle: const Text('Stored in shared preferences with other API toggles.'),
+            title: const Text('TomTom'),
+            subtitle: const Text('TomTom API key via --dart-define (see README).'),
             value: preferencesManager.isTomTomApiEnabled,
             onChanged: (v) {
               preferencesManager.isTomTomApiEnabled = v;
@@ -263,7 +303,8 @@ class SettingsScreen extends ConsumerWidget {
             },
           ),
           SwitchListTile(
-            title: const Text('Mapbox (compare — UI hook)'),
+            title: const Text('Mapbox'),
+            subtitle: const Text('Mapbox Directions (public pk. token).'),
             value: preferencesManager.isMapboxApiEnabled,
             onChanged: (v) {
               preferencesManager.isMapboxApiEnabled = v;

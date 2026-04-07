@@ -2,28 +2,37 @@ import 'package:flutter/material.dart';
 
 import '../core/constants.dart';
 
-/// Speed / limit summary card with compare columns and speeding flash animation.
+/// Speed / limit summary card: primary limit + optional TomTom / Mapbox columns.
 class SpeedSessionSummaryCard extends StatefulWidget {
   const SpeedSessionSummaryCard({
     super.key,
+    required this.primaryProviderLabel,
     required this.isTestingTab,
     required this.isSimulating,
     required this.gpsSpeedMph,
     required this.simulatedSpeedMph,
     required this.limitMph,
-    required this.tomTomCompareMph,
-    required this.mapboxCompareMph,
+    required this.resolvedPrimarySpeedLimitProvider,
+    required this.tomTomMph,
+    required this.mapboxMph,
     required this.alertThresholdMph,
     required this.suppressAlertsUnder15Mph,
   });
+
+  /// Label for the main limit column (matches [PreferencesManager.primarySpeedLimitProviderDisplayName]).
+  final String primaryProviderLabel;
 
   final bool isTestingTab;
   final bool isSimulating;
   final double gpsSpeedMph;
   final int simulatedSpeedMph;
   final double? limitMph;
-  final int? tomTomCompareMph;
-  final int? mapboxCompareMph;
+
+  /// [PreferencesManager.resolvedPrimarySpeedLimitProvider] — drives primary vs secondary labels for TomTom/Mapbox rows.
+  final int resolvedPrimarySpeedLimitProvider;
+
+  final int? tomTomMph;
+  final int? mapboxMph;
   final int alertThresholdMph;
   final bool suppressAlertsUnder15Mph;
 
@@ -157,7 +166,7 @@ class _SpeedSessionSummaryCardState extends State<SpeedSessionSummaryCard>
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
                           Text(
-                            'Speed limit (HERE)',
+                            'Speed limit (${widget.primaryProviderLabel})',
                             style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: fg),
                             textAlign: TextAlign.end,
                           ),
@@ -176,8 +185,22 @@ class _SpeedSessionSummaryCardState extends State<SpeedSessionSummaryCard>
                   ],
                 ),
                 const SizedBox(height: 12),
-                _providerRow(context, 'TomTom (compare)', widget.tomTomCompareMph, fg),
-                _providerRow(context, 'Mapbox (compare)', widget.mapboxCompareMph, fg),
+                _providerRow(
+                  context,
+                  'TomTom',
+                  widget.tomTomMph,
+                  fg,
+                  isPrimary: widget.resolvedPrimarySpeedLimitProvider ==
+                      SpeedLimitPrimaryProvider.tomTom,
+                ),
+                _providerRow(
+                  context,
+                  'Mapbox',
+                  widget.mapboxMph,
+                  fg,
+                  isPrimary: widget.resolvedPrimarySpeedLimitProvider ==
+                      SpeedLimitPrimaryProvider.mapbox,
+                ),
               ],
             ),
           ),
@@ -190,16 +213,18 @@ class _SpeedSessionSummaryCardState extends State<SpeedSessionSummaryCard>
     BuildContext context,
     String label,
     int? mph,
-    Color fg,
-  ) {
+    Color fg, {
+    required bool isPrimary,
+  }) {
     final hasMph = mph != null;
+    final role = isPrimary ? 'primary' : 'secondary';
     return Padding(
       padding: const EdgeInsets.only(top: 6),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(
-            label,
+            '$label · $role',
             style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                   color: fg.withValues(alpha: 0.7),
                 ),

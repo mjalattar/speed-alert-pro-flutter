@@ -4,9 +4,9 @@ import 'speed_debug_log_session.dart';
 import 'speed_limit_api_request_logger.dart';
 import '../services/preferences_manager.dart';
 
-/// Session-scoped TomTom / Mapbox HTTP rows for a dedicated CSV export (alongside HERE span logs).
-class CompareProviderHttpSessionLogger {
-  CompareProviderHttpSessionLogger._();
+/// Session-scoped HTTP rows for TomTom and for Mapbox (separate buffers; CSV export alongside HERE span logs).
+class SpeedProviderHttpSessionLogger {
+  SpeedProviderHttpSessionLogger._();
 
   static final List<_HttpRow> _tomTom = [];
   static final List<_HttpRow> _mapbox = [];
@@ -16,7 +16,7 @@ class CompareProviderHttpSessionLogger {
     _mapbox.clear();
   }
 
-  /// Record when [SpeedLimitHttpLogInterceptor] logs a TomTom or Mapbox request (same gating as unified CSV).
+  /// Record when [SpeedLimitHttpLogInterceptor] logs a TomTom or a Mapbox request (same gating as unified CSV).
   static void recordIfApplicable({
     required PreferencesManager preferencesManager,
     required String category,

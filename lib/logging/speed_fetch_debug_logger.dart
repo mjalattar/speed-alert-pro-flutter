@@ -3,7 +3,7 @@ import 'dart:io';
 import '../services/preferences_manager.dart';
 import 'here_fetch_telemetry.dart';
 import 'speed_alert_log_filesystem.dart';
-import 'compare_provider_http_session_logger.dart';
+import 'speed_provider_http_session_logger.dart';
 import 'here_span_fetch_session_logger.dart';
 import 'speed_debug_log_session.dart';
 import 'speed_limit_api_request_logger.dart';
@@ -124,8 +124,8 @@ class SpeedFetchDebugLogger {
   ) async {
     final csvName = await SpeedLimitApiRequestLogger.copySessionRequestsToPublicDownloads(session);
     await HereSpanFetchSessionLogger.copySessionToPublicDownloads(session);
-    await CompareProviderHttpSessionLogger.copyTomTomToPublicDownloads(session);
-    await CompareProviderHttpSessionLogger.copyMapboxToPublicDownloads(session);
+    await SpeedProviderHttpSessionLogger.copyTomTomToPublicDownloads(session);
+    await SpeedProviderHttpSessionLogger.copyMapboxToPublicDownloads(session);
     return csvName;
   }
 }

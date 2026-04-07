@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:geolocator/geolocator.dart';
 
 import '../config/app_config.dart';
+import '../core/constants.dart' show SpeedLimitPrimaryProvider;
+import '../core/speed_provider_constants.dart';
 import '../core/android_location_compat.dart';
 import '../engine/cross_track_geometry.dart';
 import '../engine/geo_bearing.dart';
@@ -17,11 +19,13 @@ import '../engine/speed_limit_stabilizer.dart';
 import '../models/road_segment.dart';
 import '../models/speed_limit_data.dart';
 import '../logging/speed_limit_logging_context.dart';
-import 'compare_providers_service.dart';
+import 'speed_providers/mapbox_speed_provider.dart';
+import 'speed_providers/tomtom_speed_provider.dart';
 import 'preferences_manager.dart';
 import 'speed_limit_aggregator.dart';
 
-/// Driving-location pipeline: HERE alert limits, sticky segments, section-walk, and TomTom/Mapbox compare paths.
+/// Driving-location pipeline: one **primary** speed provider ([PreferencesManager.resolvedPrimarySpeedLimitProvider])
+/// drives alerts + main limit; other enabled providers run as **secondary** (same GPS/mock input).
 ///
 /// **Thresholds** (private `static const` below): `RELAXED_FIRST_FETCH_SUSTAINED_MS` 800, `SUSTAINED_DRIVING_MS` 2500,
 /// `RELAXED_FIRST_COMPARE_FETCH_SUSTAINED_MS` 0, `MIN_DISTANCE_CHANGE_METERS` 480,
@@ -30,33 +34,36 @@ import 'speed_limit_aggregator.dart';
 /// `STATIONARY_SPEED_MPS` 0.45, `STATIONARY_MAX_DISTANCE_FROM_LAST_FETCH_M` 20,
 /// `STATIONARY_DISPLAY_FREEZE_MPS` 2.24, `DRIVING_MIN_MPH_FOR_FETCH` 9,
 /// `MIN_DISPLACEMENT_SINCE_FETCH_M` 100, `MIN_HEADING_CHANGE_FOR_FETCH_DEG` 45,
-/// `TOMTOM_NETWORK_MIN_DISPLACEMENT_M` 480, `TOMTOM_NETWORK_MIN_HEADING_CHANGE_DEG` 45,
-/// `TOMTOM_ALONG_POLYLINE_MAX_CROSS_TRACK_M` 72, `TOMTOM_ALONG_POLYLINE_PAST_END_BUFFER_M` 90,
-/// `MAPBOX_NETWORK_MIN_DISPLACEMENT_M` 480, `MAPBOX_NETWORK_MIN_HEADING_CHANGE_DEG` 45,
-/// `MAPBOX_ALONG_POLYLINE_MAX_CROSS_TRACK_M` 70, `MAPBOX_ALONG_POLYLINE_PAST_END_BUFFER_M` 88,
+/// TomTom/Mapbox secondary gating: [SpeedProviderConstants] (tune each provider separately).
 /// `HEADING_UTURN_MIN_MPH` 12, `U_TURN_HEADING_DELTA_DEG` 125,
 /// `MODERATE_TURN_HEADING_DELTA_DEG` 45, `MODERATE_TURN_HEADING_COOLDOWN_MS` 4000.
 ///
-/// **Primary (HERE):** [HereSectionSpeedModel] / sticky segment / network — [CrossTrackGeometry] applies to HERE
-/// polylines first. Section-walk uses the span at the current along-polyline position each tick (no multi-tick vote).
-/// The debounced alert limit is assigned only in [_applyHereResolvedLimit] from HERE inputs.
+/// **Primary HERE:** [HereSectionSpeedModel], sticky segment, Edge/local HERE network — limit in [_applyPrimaryResolvedLimit].
 ///
-/// **Comparison (TomTom / Mapbox):** [AnnotationSectionSpeedModel] via [compare] only; [_enqueueCompareSideEffectsForLocationTick]
-/// never writes the alert limit. Async compare fetches use triple-locking.
+/// **Primary TomTom or Mapbox:** [AnnotationSectionSpeedModel] from the corresponding [TomTomSpeedProvider] / [MapboxSpeedProvider] fetch; same section-walk projection.
+///
+/// **Secondary** providers: async fetches + along-polyline cache refresh only (no primary limit).
 class LocationProcessor {
   LocationProcessor({
     required this.preferencesManager,
     required this.speedLimitAggregator,
-    required this.compare,
+    required this.tomTom,
+    required this.mapbox,
     required this.onSpeedUpdate,
   });
 
   final PreferencesManager preferencesManager;
   final SpeedLimitAggregator speedLimitAggregator;
-  final CompareProvidersService compare;
+  final TomTomSpeedProvider tomTom;
+  final MapboxSpeedProvider mapbox;
 
   /// Called after speed/limit updates so the owner can refresh UI, audio, and overlay in one place.
   final void Function(double vehicleSpeedMph, double? speedLimitMph) onSpeedUpdate;
+
+  int get _primary => preferencesManager.resolvedPrimarySpeedLimitProvider;
+  bool get _primaryHere => _primary == SpeedLimitPrimaryProvider.here;
+  bool get _primaryTomTom => _primary == SpeedLimitPrimaryProvider.tomTom;
+  bool get _primaryMapbox => _primary == SpeedLimitPrimaryProvider.mapbox;
 
   bool _pipelinePaused = false;
 
@@ -81,8 +88,8 @@ class LocationProcessor {
 
   final _sectionWalkAlongContinuity = SectionWalkAlongContinuity();
 
-  AnnotationSectionSpeedModel? _tomtomCompareRouteModel;
-  AnnotationSectionSpeedModel? _mapboxCompareRouteModel;
+  AnnotationSectionSpeedModel? _tomtomRouteModel;
+  AnnotationSectionSpeedModel? _mapboxRouteModel;
 
   final _downwardLimitDebouncer = DownwardLimitDebouncer();
 
@@ -122,12 +129,12 @@ class LocationProcessor {
   bool shouldApplyLocalStabilizer() =>
       useLocalHereForAlerts() && preferencesManager.useLocalSpeedStabilizer;
 
-  (int?, int?) _comparePeekMphForLogs() {
+  (int?, int?) _vendorPeekMphForLogs() {
     if (!preferencesManager.isTomTomApiEnabled &&
         !preferencesManager.isMapboxApiEnabled) {
       return (null, null);
     }
-    return compare.peekCachedCompareTomTomMapboxMph();
+    return (tomTom.peekCached()?.speedLimitMph, mapbox.peekCached()?.speedLimitMph);
   }
 
   void setPipelinePaused(bool paused) {
@@ -144,8 +151,8 @@ class LocationProcessor {
       _pendingTomTomCompareFetchLocation = null;
       _mapboxCompareFetchInFlight = false;
       _pendingMapboxCompareFetchLocation = null;
-      _tomtomCompareRouteModel = null;
-      _mapboxCompareRouteModel = null;
+      _tomtomRouteModel = null;
+      _mapboxRouteModel = null;
     }
   }
 
@@ -200,8 +207,8 @@ class LocationProcessor {
     _stickyRoadSegment = null;
     _hereSectionSpeedModel = null;
     _sectionWalkAlongContinuity.reset();
-    _tomtomCompareRouteModel = null;
-    _mapboxCompareRouteModel = null;
+    _tomtomRouteModel = null;
+    _mapboxRouteModel = null;
     _downwardLimitDebouncer.reset();
     _lastRouteHeadingDeg = null;
     _lastModerateHeadingInvalidateUtcMs = 0;
@@ -213,7 +220,8 @@ class LocationProcessor {
     _pendingTomTomCompareFetchLocation = null;
     _mapboxCompareFetchInFlight = false;
     _pendingMapboxCompareFetchLocation = null;
-    compare.clearCompareProviderStickyCache();
+    tomTom.clearStickyCacheOnly();
+    mapbox.clearStickyCacheOnly();
     _lastRouteContextKey = null;
     _lastHereSegmentKey = null;
     _lastHereRawMph = null;
@@ -257,23 +265,26 @@ class LocationProcessor {
     }
   }
 
-  /// TomTom/Mapbox **compare** enqueue + along-polyline cache refresh. **Never** assigns [_currentSpeedLimitMph]
-  /// — only [_applyHereResolvedLimit] does.
+  /// Secondary TomTom/Mapbox network fetches + along-polyline cache refresh. Primary fetch runs in the main tail.
   void _enqueueCompareSideEffectsForLocationTick(
     Position location,
     double rawMph,
     double? headingForPolyline,
   ) {
-    unawaited(
-      _maybeRequestTomTomCompareFetch(location, rawMph, headingForPolyline),
-    );
-    unawaited(
-      _maybeRequestMapboxCompareFetch(location, rawMph, headingForPolyline),
-    );
-    _applyCompareRouteModelsAlongPolyline(location, headingForPolyline);
+    if (!_primaryTomTom) {
+      unawaited(
+        _maybeRequestTomTomCompareFetch(location, rawMph, headingForPolyline),
+      );
+    }
+    if (!_primaryMapbox) {
+      unawaited(
+        _maybeRequestMapboxCompareFetch(location, rawMph, headingForPolyline),
+      );
+    }
+    _applyRouteModelsAlongPolyline(location, headingForPolyline);
   }
 
-  /// Per-fix pipeline: speed → sustained anchors → trajectory → logging → heading → HERE/compare side effects.
+  /// Per-fix pipeline: speed → sustained anchors → trajectory → logging → heading → vendor side effects.
   void processNewLocationInnerBody(
     Position location, {
     int? androidElapsedRealtimeNanos,
@@ -304,8 +315,8 @@ class LocationProcessor {
     final headingForPolyline = smoothedBearing ?? userHeading;
 
     _maybeInvalidateForSharpHeadingChange(userHeading, rawMph, location.timestamp.millisecondsSinceEpoch);
-    // Sharp-turn invalidation clears compare sustained anchors. Re-arm immediately so TomTom/Mapbox
-    // gates see the current fix as sustained driving in the same tick (otherwise compare often never
+    // Sharp-turn invalidation clears TomTom/Mapbox sustained anchors. Re-arm immediately so
+    // gates see the current fix as sustained driving in the same tick (otherwise secondary fetches often never
     // ran during simulation when bearing jumped each route vertex).
     _updateTomTomCompareSustainedAnchor(location, rawMph);
     _updateMapboxCompareSustainedAnchor(location, rawMph);
@@ -315,94 +326,223 @@ class LocationProcessor {
       headingForPolyline,
     );
 
-    final routeModel = _hereSectionSpeedModel;
-    if (routeModel != null && !routeModel.isExpired()) {
-      final proj = CrossTrackGeometry.projectOntoPolylineForMatching(
-        location.latitude,
-        location.longitude,
-        routeModel.geometry,
-        headingForPolyline,
-      );
-      if (proj != null &&
-          CrossTrackGeometry.isSectionWalkProjectionValid(
-            proj,
-            routeModel.geometry,
-            headingForPolyline,
-          )) {
-        final alongRaw = proj.alongMeters;
-        final along = _sectionWalkAlongContinuity.clampAlong(alongRaw, location);
-        final resolved = routeModel.speedLimitDataAtAlong(along);
-        final mph = resolved.speedLimitMph;
-        if (mph != null) {
-          _applyHereResolvedLimit(
-            location: location,
-            vehicleSpeedMph: displayMph,
-            rawMph: mph,
-            segmentKey: resolved.segmentKey,
-            functionalClass: resolved.functionalClass,
-            logCompareRow: false,
-            hereTelemetry: null,
-            logFields: null,
-            hereLimitFromNetworkFetch: false,
-            hereResolvePath: 'section_walk',
-          );
-          return;
+    if (_primaryHere) {
+      final routeModel = _hereSectionSpeedModel;
+      if (routeModel != null && !routeModel.isExpired()) {
+        final proj = CrossTrackGeometry.projectOntoPolylineForMatching(
+          location.latitude,
+          location.longitude,
+          routeModel.geometry,
+          headingForPolyline,
+        );
+        if (proj != null &&
+            CrossTrackGeometry.isSectionWalkProjectionValid(
+              proj,
+              routeModel.geometry,
+              headingForPolyline,
+            )) {
+          final alongRaw = proj.alongMeters;
+          final along = _sectionWalkAlongContinuity.clampAlong(alongRaw, location);
+          final resolved = routeModel.speedLimitDataAtAlong(along);
+          final mph = resolved.speedLimitMph;
+          if (mph != null) {
+            _applyPrimaryResolvedLimit(
+              location: location,
+              vehicleSpeedMph: displayMph,
+              rawMph: mph,
+              segmentKey: resolved.segmentKey,
+              functionalClass: resolved.functionalClass,
+              logCompareRow: false,
+              hereTelemetry: null,
+              logFields: null,
+              hereLimitFromNetworkFetch: false,
+              hereResolvePath: 'section_walk',
+            );
+            return;
+          }
+        } else {
+          _sectionWalkAlongContinuity.reset();
+          _hereSectionSpeedModel = null;
         }
-      } else {
-        _sectionWalkAlongContinuity.reset();
-        _hereSectionSpeedModel = null;
       }
     }
 
-    final seg = _stickyRoadSegment;
-    if (seg != null &&
-        !seg.isExpired() &&
-        CrossTrackGeometry.isUserOnSegment(
+    if (_primaryTomTom) {
+      final routeModel = _tomtomRouteModel;
+      if (routeModel != null && !routeModel.isExpired()) {
+        final proj = CrossTrackGeometry.projectOntoPolylineForMatching(
           location.latitude,
           location.longitude,
-          seg,
+          routeModel.geometry,
           headingForPolyline,
-        )) {
-      _applyHereResolvedLimit(
-        location: location,
-        vehicleSpeedMph: displayMph,
-        rawMph: seg.speedLimitMph.round(),
-        segmentKey: seg.linkId,
-        functionalClass: seg.functionalClass,
-        logCompareRow: false,
-        hereTelemetry: null,
-        logFields: null,
-        hereLimitFromNetworkFetch: false,
-        hereResolvePath: 'sticky',
-      );
-      return;
+        );
+        if (proj != null &&
+            CrossTrackGeometry.isSectionWalkProjectionValid(
+              proj,
+              routeModel.geometry,
+              headingForPolyline,
+            )) {
+          final alongRaw = proj.alongMeters;
+          final along = _sectionWalkAlongContinuity.clampAlong(alongRaw, location);
+          final resolved = routeModel.speedLimitDataAtAlong(along);
+          final mph = resolved.speedLimitMph;
+          if (mph != null) {
+            _applyPrimaryResolvedLimit(
+              location: location,
+              vehicleSpeedMph: displayMph,
+              rawMph: mph,
+              segmentKey: resolved.segmentKey,
+              functionalClass: resolved.functionalClass,
+              logCompareRow: false,
+              hereTelemetry: null,
+              logFields: null,
+              hereLimitFromNetworkFetch: false,
+              hereResolvePath: 'section_walk',
+            );
+            return;
+          }
+        } else {
+          _sectionWalkAlongContinuity.reset();
+          _tomtomRouteModel = null;
+        }
+      }
     }
 
+    if (_primaryMapbox) {
+      final routeModel = _mapboxRouteModel;
+      if (routeModel != null && !routeModel.isExpired()) {
+        final proj = CrossTrackGeometry.projectOntoPolylineForMatching(
+          location.latitude,
+          location.longitude,
+          routeModel.geometry,
+          headingForPolyline,
+        );
+        if (proj != null &&
+            CrossTrackGeometry.isSectionWalkProjectionValid(
+              proj,
+              routeModel.geometry,
+              headingForPolyline,
+            )) {
+          final alongRaw = proj.alongMeters;
+          final along = _sectionWalkAlongContinuity.clampAlong(alongRaw, location);
+          final resolved = routeModel.speedLimitDataAtAlong(along);
+          final mph = resolved.speedLimitMph;
+          if (mph != null) {
+            _applyPrimaryResolvedLimit(
+              location: location,
+              vehicleSpeedMph: displayMph,
+              rawMph: mph,
+              segmentKey: resolved.segmentKey,
+              functionalClass: resolved.functionalClass,
+              logCompareRow: false,
+              hereTelemetry: null,
+              logFields: null,
+              hereLimitFromNetworkFetch: false,
+              hereResolvePath: 'section_walk',
+            );
+            return;
+          }
+        } else {
+          _sectionWalkAlongContinuity.reset();
+          _mapboxRouteModel = null;
+        }
+      }
+    }
+
+    if (_primaryHere) {
+      final seg = _stickyRoadSegment;
+      if (seg != null &&
+          !seg.isExpired() &&
+          CrossTrackGeometry.isUserOnSegment(
+            location.latitude,
+            location.longitude,
+            seg,
+            headingForPolyline,
+          )) {
+        _applyPrimaryResolvedLimit(
+          location: location,
+          vehicleSpeedMph: displayMph,
+          rawMph: seg.speedLimitMph.round(),
+          segmentKey: seg.linkId,
+          functionalClass: seg.functionalClass,
+          logCompareRow: false,
+          hereTelemetry: null,
+          logFields: null,
+          hereLimitFromNetworkFetch: false,
+          hereResolvePath: 'sticky',
+        );
+        return;
+      }
+    }
+
+    final hasPrimaryGeometry = (_primaryHere &&
+            (_stickyRoadSegment != null || _hereSectionSpeedModel != null)) ||
+        (_primaryTomTom && _tomtomRouteModel != null) ||
+        (_primaryMapbox && _mapboxRouteModel != null);
     if (speedMps < STATIONARY_DISPLAY_FREEZE_MPS &&
         AndroidLocationCompat.positionHasReportedSpeed(location) &&
-        (_stickyRoadSegment != null || _hereSectionSpeedModel != null)) {
-      final lim = _currentSpeedLimitMph ?? _stickyRoadSegment?.speedLimitMph;
+        hasPrimaryGeometry) {
+      final lim = _currentSpeedLimitMph ??
+          (_primaryHere ? _stickyRoadSegment?.speedLimitMph : null);
       if (lim == null) return;
       SpeedLimitLoggingContext.setHereAlertResolvePath('stationary_hold');
       onSpeedUpdate(displayMph, lim);
       return;
     }
 
-    if (useLocalHereForAlerts()) {
-      _maybeRequestHereFetch(location, rawMph, displayMph);
+    if (_primaryHere) {
+      if (useLocalHereForAlerts()) {
+        _maybeRequestHereFetch(location, rawMph, displayMph);
+        return;
+      }
+      if (_shouldFetchNewSpeedLimit(location, speedMps)) {
+        if (_shouldTriggerHereSpeedLimitFetch(location, rawMph)) {
+          _maybeRequestHereFetch(location, rawMph, displayMph);
+        } else {
+          _emitSpeedUiOnly(displayMph, 'here_fetch_gated');
+        }
+      } else {
+        SpeedLimitLoggingContext.setHereAlertResolvePath('remote_cache_idle');
+        onSpeedUpdate(displayMph, _currentSpeedLimitMph);
+      }
       return;
     }
 
-    if (_shouldFetchNewSpeedLimit(location, speedMps)) {
-      if (_shouldTriggerHereSpeedLimitFetch(location, rawMph)) {
-        _maybeRequestHereFetch(location, rawMph, displayMph);
+    if (_primaryTomTom) {
+      if (preferencesManager.isTomTomApiEnabled) {
+        if (_shouldFetchNewSpeedLimit(location, speedMps)) {
+          if (_shouldTriggerHereSpeedLimitFetch(location, rawMph)) {
+            _maybeRequestTomTomPrimaryFetch(location, rawMph, displayMph);
+          } else {
+            _emitSpeedUiOnly(displayMph, 'tomtom_fetch_gated');
+          }
+        } else {
+          _emitSpeedUiOnly(displayMph, 'tomtom_fetch_idle');
+        }
       } else {
-        _emitSpeedUiOnly(displayMph, 'here_fetch_gated');
+        _emitSpeedUiOnly(displayMph, 'tomtom_fetch_disabled');
       }
-    } else {
-      SpeedLimitLoggingContext.setHereAlertResolvePath('remote_cache_idle');
-      onSpeedUpdate(displayMph, _currentSpeedLimitMph);
+      return;
     }
+
+    if (_primaryMapbox) {
+      if (preferencesManager.isMapboxApiEnabled) {
+        if (_shouldFetchNewSpeedLimit(location, speedMps)) {
+          if (_shouldTriggerHereSpeedLimitFetch(location, rawMph)) {
+            _maybeRequestMapboxPrimaryFetch(location, rawMph, displayMph);
+          } else {
+            _emitSpeedUiOnly(displayMph, 'mapbox_fetch_gated');
+          }
+        } else {
+          _emitSpeedUiOnly(displayMph, 'mapbox_fetch_idle');
+        }
+      } else {
+        _emitSpeedUiOnly(displayMph, 'mapbox_fetch_disabled');
+      }
+      return;
+    }
+
+    _emitSpeedUiOnly(displayMph, 'primary_provider_unresolved');
   }
 
   (double, double) _speedMpsAndRawMph(Position location) {
@@ -541,6 +681,10 @@ class LocationProcessor {
     return 'na';
   }
 
+  /// Local distance/heading thresholds for primary fetch (HERE local vs remote Edge; TomTom/Mapbox always local keys).
+  bool _useLocalDistanceThresholdsForPrimaryFetch() =>
+      (_primaryHere && useLocalHereForAlerts()) || _primaryTomTom || _primaryMapbox;
+
   bool _shouldFetchNewSpeedLimit(Position currentLocation, double effectiveMps) {
     final lastLoc = _lastApiFetchLocation;
     if (lastLoc == null) return true;
@@ -570,10 +714,10 @@ class LocationProcessor {
       return 0.0;
     }();
 
-    final minDist = useLocalHereForAlerts()
+    final minDist = _useLocalDistanceThresholdsForPrimaryFetch()
         ? MIN_DISTANCE_CHANGE_METERS
         : MIN_DISTANCE_CHANGE_METERS_REMOTE;
-    final minHeading = useLocalHereForAlerts()
+    final minHeading = _useLocalDistanceThresholdsForPrimaryFetch()
         ? MIN_HEADING_CHANGE_DEGREES
         : MIN_HEADING_CHANGE_DEGREES_REMOTE;
     return distance >= minDist || headingChange >= minHeading;
@@ -630,12 +774,12 @@ class LocationProcessor {
   }
 
   bool _tomtomCompareHasUsableRouteCache() {
-    final m = _tomtomCompareRouteModel;
+    final m = _tomtomRouteModel;
     return m != null && !m.isExpired();
   }
 
   bool _mapboxCompareHasUsableRouteCache() {
-    final m = _mapboxCompareRouteModel;
+    final m = _mapboxRouteModel;
     return m != null && !m.isExpired();
   }
 
@@ -644,13 +788,13 @@ class LocationProcessor {
     if (rawMph < DRIVING_MIN_MPH_FOR_FETCH) return false;
     if (!_tomtomCompareSustainedEligible(location, rawMph)) return false;
     final minDisp = _tomtomCompareHasUsableRouteCache()
-        ? TOMTOM_NETWORK_MIN_DISPLACEMENT_M
+        ? SpeedProviderConstants.tomtomSecondaryNetworkMinDisplacementM
         : MIN_DISPLACEMENT_SINCE_FETCH_M;
     return _sufficientDisplacementSinceLastForNetworkFetch(
       location,
       _lastTomTomCompareFetchLocation,
       minDisp,
-      TOMTOM_NETWORK_MIN_HEADING_CHANGE_DEG,
+      SpeedProviderConstants.tomtomSecondaryNetworkMinHeadingChangeDeg,
     );
   }
 
@@ -659,13 +803,13 @@ class LocationProcessor {
     if (rawMph < DRIVING_MIN_MPH_FOR_FETCH) return false;
     if (!_mapboxCompareSustainedEligible(location, rawMph)) return false;
     final minDisp = _mapboxCompareHasUsableRouteCache()
-        ? MAPBOX_NETWORK_MIN_DISPLACEMENT_M
+        ? SpeedProviderConstants.mapboxSecondaryNetworkMinDisplacementM
         : MIN_DISPLACEMENT_SINCE_FETCH_M;
     return _sufficientDisplacementSinceLastForNetworkFetch(
       location,
       _lastMapboxCompareFetchLocation,
       minDisp,
-      MAPBOX_NETWORK_MIN_HEADING_CHANGE_DEG,
+      SpeedProviderConstants.mapboxSecondaryNetworkMinHeadingChangeDeg,
     );
   }
 
@@ -713,18 +857,18 @@ class LocationProcessor {
     await _enqueueMapboxCompareFetch(location, headingDeg);
   }
 
-  void _applyCompareRouteModelsAlongPolyline(
+  void _applyRouteModelsAlongPolyline(
     Position location,
     double? headingForPolyline,
   ) {
-    final tm = _tomtomCompareRouteModel;
+    final tm = _tomtomRouteModel;
     if (tm != null && !tm.isExpired()) {
       if (CrossTrackGeometry.isUserOnPolylineForAlongResolve(
         location.latitude,
         location.longitude,
         tm.geometry,
-        maxCrossTrackM: TOMTOM_ALONG_POLYLINE_MAX_CROSS_TRACK_M,
-        pastEndBufferM: TOMTOM_ALONG_POLYLINE_PAST_END_BUFFER_M,
+        maxCrossTrackM: SpeedProviderConstants.tomtomSecondaryAlongMaxCrossTrackM,
+        pastEndBufferM: SpeedProviderConstants.tomtomSecondaryAlongPastEndBufferM,
         userHeadingDeg: headingForPolyline,
       )) {
         final along = CrossTrackGeometry.alongPolylineMetersForMatching(
@@ -733,19 +877,19 @@ class LocationProcessor {
           tm.geometry,
           headingForPolyline,
         );
-        compare.publishTomTomCompareFromAlong(tm.speedLimitDataAtAlong(along));
+        tomTom.publishFromAlong(tm.speedLimitDataAtAlong(along));
       } else {
-        _tomtomCompareRouteModel = null;
+        _tomtomRouteModel = null;
       }
     }
-    final mb = _mapboxCompareRouteModel;
+    final mb = _mapboxRouteModel;
     if (mb != null && !mb.isExpired()) {
       if (CrossTrackGeometry.isUserOnPolylineForAlongResolve(
         location.latitude,
         location.longitude,
         mb.geometry,
-        maxCrossTrackM: MAPBOX_ALONG_POLYLINE_MAX_CROSS_TRACK_M,
-        pastEndBufferM: MAPBOX_ALONG_POLYLINE_PAST_END_BUFFER_M,
+        maxCrossTrackM: SpeedProviderConstants.mapboxSecondaryAlongMaxCrossTrackM,
+        pastEndBufferM: SpeedProviderConstants.mapboxSecondaryAlongPastEndBufferM,
         userHeadingDeg: headingForPolyline,
       )) {
         final along = CrossTrackGeometry.alongPolylineMetersForMatching(
@@ -754,9 +898,9 @@ class LocationProcessor {
           mb.geometry,
           headingForPolyline,
         );
-        compare.publishMapboxCompareFromAlong(mb.speedLimitDataAtAlong(along));
+        mapbox.publishFromAlong(mb.speedLimitDataAtAlong(along));
       } else {
-        _mapboxCompareRouteModel = null;
+        _mapboxRouteModel = null;
       }
     }
   }
@@ -772,14 +916,14 @@ class LocationProcessor {
     _lastTomTomCompareFetchLocation = location;
     try {
       final snapMps = _effectiveSpeedMpsAndMph(location).$1;
-      final out = await compare.fetchTomTomForCompare(
+      final out = await tomTom.fetchSpeedLimit(
         latitude: location.latitude,
         longitude: location.longitude,
         headingDegrees: headingDeg,
         locationFixTimeUtcMs: location.timestamp.millisecondsSinceEpoch,
         speedMpsForSnapTiming: snapMps,
       );
-      _tomtomCompareRouteModel = out.sectionModel;
+      _tomtomRouteModel = out.sectionModel;
     } finally {
       _tomtomCompareFetchInFlight = false;
       final next = _pendingTomTomCompareFetchLocation;
@@ -803,12 +947,12 @@ class LocationProcessor {
     _pendingRelaxedFirstMapboxCompareFetch = false;
     _lastMapboxCompareFetchLocation = location;
     try {
-      final out = await compare.fetchMapboxForCompare(
+      final out = await mapbox.fetchSpeedLimit(
         latitude: location.latitude,
         longitude: location.longitude,
         headingDegrees: headingDeg,
       );
-      _mapboxCompareRouteModel = out.sectionModel;
+      _mapboxRouteModel = out.sectionModel;
     } finally {
       _mapboxCompareFetchInFlight = false;
       final next = _pendingMapboxCompareFetchLocation;
@@ -839,23 +983,23 @@ class LocationProcessor {
   }
 
   void _invalidateTomTomCompareForSharpTurn() {
-    _tomtomCompareRouteModel = null;
+    _tomtomRouteModel = null;
     _lastTomTomCompareFetchLocation = null;
     _pendingRelaxedFirstTomTomCompareFetch = true;
     _tomtomCompareSustainedStartUtcMs = 0;
     _tomtomCompareFetchInFlight = false;
     _pendingTomTomCompareFetchLocation = null;
-    compare.clearTomTomCompareStickyCacheOnly();
+    tomTom.clearStickyCacheOnly();
   }
 
   void _invalidateMapboxCompareForSharpTurn() {
-    _mapboxCompareRouteModel = null;
+    _mapboxRouteModel = null;
     _lastMapboxCompareFetchLocation = null;
     _pendingRelaxedFirstMapboxCompareFetch = true;
     _mapboxCompareSustainedStartUtcMs = 0;
     _mapboxCompareFetchInFlight = false;
     _pendingMapboxCompareFetchLocation = null;
-    compare.clearMapboxCompareStickyCacheOnly();
+    mapbox.clearStickyCacheOnly();
   }
 
   void _invalidateRouteGeometryForSharpTurn() {
@@ -995,7 +1139,7 @@ class LocationProcessor {
         _stickyRoadSegment = hereResult.stickySegment;
         _sectionWalkAlongContinuity.reset();
         _hereSectionSpeedModel = hereResult.sectionSpeedModel;
-        _applyHereResolvedLimit(
+        _applyPrimaryResolvedLimit(
           location: location,
           vehicleSpeedMph: vehicleSpeedMph,
           rawMph: rawMph,
@@ -1013,7 +1157,7 @@ class LocationProcessor {
         _sectionWalkAlongContinuity.reset();
         SpeedLimitLoggingContext.updateRoadFunctionalClass(resolvedHere.functionalClass);
         if (logCompare && telemetryObj != null && logFields != null) {
-          final peek = _comparePeekMphForLogs();
+          final peek = _vendorPeekMphForLogs();
           SpeedLimitLoggingContext.setHereAlertResolvePath('network_no_mph');
           await SpeedFetchDebugLogger.append(
             preferencesManager: preferencesManager,
@@ -1061,18 +1205,301 @@ class LocationProcessor {
     }
   }
 
-  /// **HERE-only** resolution path for the posted alert limit.
+  void _maybeRequestTomTomPrimaryFetch(
+    Position location,
+    double rawMph,
+    double displayMph,
+  ) {
+    if (!_shouldTriggerHereSpeedLimitFetch(location, rawMph)) {
+      _emitSpeedUiOnly(displayMph, 'tomtom_fetch_gated');
+      return;
+    }
+    _enqueueTomTomPrimaryFetch(location, displayMph);
+  }
+
+  void _enqueueTomTomPrimaryFetch(Position location, double displaySpeedMph) {
+    if (_pipelinePaused) return;
+    if (_tomtomCompareFetchInFlight) {
+      _pendingTomTomCompareFetchLocation = location;
+      _emitSpeedUiOnly(displaySpeedMph, 'tomtom_fetch_in_flight');
+      return;
+    }
+    _tomtomCompareFetchInFlight = true;
+    _pendingRelaxedFirstTomTomCompareFetch = false;
+    final prevTriggerLoc = _lastApiFetchLocation;
+    double? metersSincePrev;
+    int? msSincePrev;
+    if (prevTriggerLoc != null) {
+      metersSincePrev = AndroidLocationCompat.distanceBetweenMeters(
+        prevTriggerLoc.latitude,
+        prevTriggerLoc.longitude,
+        location.latitude,
+        location.longitude,
+      );
+      final rawMs = location.timestamp.millisecondsSinceEpoch -
+          prevTriggerLoc.timestamp.millisecondsSinceEpoch;
+      msSincePrev = rawMs < 0 ? 0 : rawMs;
+    }
+    _lastApiFetchLocation = location;
+    _lastTomTomCompareFetchLocation = location;
+    final generation = _speedFetchGeneration;
+    unawaited(
+      _runTomTomPrimaryFetchChain(
+        location,
+        displaySpeedMph,
+        generation,
+        metersSincePrev,
+        msSincePrev,
+      ),
+    );
+  }
+
+  Future<void> _runTomTomPrimaryFetchChain(
+    Position location,
+    double displaySpeedMph,
+    int generation,
+    double? metersSincePriorFetch,
+    int? msSincePriorFetch,
+  ) async {
+    try {
+      await _runShortTomTomPrimaryFetch(
+        location,
+        displaySpeedMph,
+        generation,
+        metersSincePriorFetch,
+        msSincePriorFetch,
+      );
+    } catch (e, st) {
+      _tomtomRouteModel = null;
+      _sectionWalkAlongContinuity.reset();
+      assert(() {
+        // ignore: avoid_print
+        print('LocationProcessor TomTom primary fetch failed: $e\n$st');
+        return true;
+      }());
+      if (generation == _speedFetchGeneration) {
+        onSpeedUpdate(displaySpeedMph, _currentSpeedLimitMph);
+      }
+    } finally {
+      _tomtomCompareFetchInFlight = false;
+      final next = _pendingTomTomCompareFetchLocation;
+      _pendingTomTomCompareFetchLocation = null;
+      if (next != null && generation == _speedFetchGeneration) {
+        final nextPair = _effectiveSpeedMpsAndMph(next);
+        final nextMps = nextPair.$1;
+        final nextRaw = nextPair.$2;
+        final nextDisplay = nextRaw;
+        if (_shouldFetchNewSpeedLimit(next, nextMps)) {
+          _maybeRequestTomTomPrimaryFetch(next, nextRaw, nextDisplay);
+        }
+      }
+    }
+  }
+
+  Future<void> _runShortTomTomPrimaryFetch(
+    Position location,
+    double vehicleSpeedMph,
+    int generation,
+    double? metersSincePriorFetch,
+    int? msSincePriorFetch,
+  ) async {
+    final logCompare = preferencesManager.logSpeedFetchesToFile;
+    final logFields = logCompare
+        ? _FetchCycleLogFields(
+            vehicleSpeedMph: vehicleSpeedMph,
+            metersSincePriorFetch: metersSincePriorFetch,
+            msSincePriorFetch: msSincePriorFetch,
+            generation: generation,
+          )
+        : null;
+
+    final bearing = AndroidLocationCompat.positionBearingIfHasBearing(location);
+    final snapMps = _effectiveSpeedMpsAndMph(location).$1;
+    final out = await tomTom.fetchSpeedLimit(
+      latitude: location.latitude,
+      longitude: location.longitude,
+      headingDegrees: bearing,
+      locationFixTimeUtcMs: location.timestamp.millisecondsSinceEpoch,
+      speedMpsForSnapTiming: snapMps,
+    );
+
+    if (generation != _speedFetchGeneration) return;
+
+    final resolved = out.data;
+    final rawMph = resolved.speedLimitMph;
+    if (generation != _speedFetchGeneration) return;
+
+    _tomtomRouteModel = out.sectionModel;
+    if (rawMph != null) {
+      _stickyRoadSegment = null;
+      _sectionWalkAlongContinuity.reset();
+      _applyPrimaryResolvedLimit(
+        location: location,
+        vehicleSpeedMph: vehicleSpeedMph,
+        rawMph: rawMph,
+        segmentKey: resolved.segmentKey,
+        functionalClass: resolved.functionalClass,
+        logCompareRow: logCompare,
+        hereTelemetry: null,
+        logFields: logFields,
+        hereLimitFromNetworkFetch: true,
+        hereResolvePath: 'network',
+      );
+    } else {
+      _sectionWalkAlongContinuity.reset();
+      SpeedLimitLoggingContext.updateRoadFunctionalClass(resolved.functionalClass);
+      onSpeedUpdate(vehicleSpeedMph, _currentSpeedLimitMph);
+    }
+  }
+
+  void _maybeRequestMapboxPrimaryFetch(
+    Position location,
+    double rawMph,
+    double displayMph,
+  ) {
+    if (!_shouldTriggerHereSpeedLimitFetch(location, rawMph)) {
+      _emitSpeedUiOnly(displayMph, 'mapbox_fetch_gated');
+      return;
+    }
+    _enqueueMapboxPrimaryFetch(location, displayMph);
+  }
+
+  void _enqueueMapboxPrimaryFetch(Position location, double displaySpeedMph) {
+    if (_pipelinePaused) return;
+    if (_mapboxCompareFetchInFlight) {
+      _pendingMapboxCompareFetchLocation = location;
+      _emitSpeedUiOnly(displaySpeedMph, 'mapbox_fetch_in_flight');
+      return;
+    }
+    _mapboxCompareFetchInFlight = true;
+    _pendingRelaxedFirstMapboxCompareFetch = false;
+    final prevTriggerLoc = _lastApiFetchLocation;
+    double? metersSincePrev;
+    int? msSincePrev;
+    if (prevTriggerLoc != null) {
+      metersSincePrev = AndroidLocationCompat.distanceBetweenMeters(
+        prevTriggerLoc.latitude,
+        prevTriggerLoc.longitude,
+        location.latitude,
+        location.longitude,
+      );
+      final rawMs = location.timestamp.millisecondsSinceEpoch -
+          prevTriggerLoc.timestamp.millisecondsSinceEpoch;
+      msSincePrev = rawMs < 0 ? 0 : rawMs;
+    }
+    _lastApiFetchLocation = location;
+    _lastMapboxCompareFetchLocation = location;
+    final generation = _speedFetchGeneration;
+    unawaited(
+      _runMapboxPrimaryFetchChain(
+        location,
+        displaySpeedMph,
+        generation,
+        metersSincePrev,
+        msSincePrev,
+      ),
+    );
+  }
+
+  Future<void> _runMapboxPrimaryFetchChain(
+    Position location,
+    double displaySpeedMph,
+    int generation,
+    double? metersSincePriorFetch,
+    int? msSincePriorFetch,
+  ) async {
+    try {
+      await _runShortMapboxPrimaryFetch(
+        location,
+        displaySpeedMph,
+        generation,
+        metersSincePriorFetch,
+        msSincePriorFetch,
+      );
+    } catch (e, st) {
+      _mapboxRouteModel = null;
+      _sectionWalkAlongContinuity.reset();
+      assert(() {
+        // ignore: avoid_print
+        print('LocationProcessor Mapbox primary fetch failed: $e\n$st');
+        return true;
+      }());
+      if (generation == _speedFetchGeneration) {
+        onSpeedUpdate(displaySpeedMph, _currentSpeedLimitMph);
+      }
+    } finally {
+      _mapboxCompareFetchInFlight = false;
+      final next = _pendingMapboxCompareFetchLocation;
+      _pendingMapboxCompareFetchLocation = null;
+      if (next != null && generation == _speedFetchGeneration) {
+        final nextPair = _effectiveSpeedMpsAndMph(next);
+        final nextMps = nextPair.$1;
+        final nextRaw = nextPair.$2;
+        final nextDisplay = nextRaw;
+        if (_shouldFetchNewSpeedLimit(next, nextMps)) {
+          _maybeRequestMapboxPrimaryFetch(next, nextRaw, nextDisplay);
+        }
+      }
+    }
+  }
+
+  Future<void> _runShortMapboxPrimaryFetch(
+    Position location,
+    double vehicleSpeedMph,
+    int generation,
+    double? metersSincePriorFetch,
+    int? msSincePriorFetch,
+  ) async {
+    final logCompare = preferencesManager.logSpeedFetchesToFile;
+    final logFields = logCompare
+        ? _FetchCycleLogFields(
+            vehicleSpeedMph: vehicleSpeedMph,
+            metersSincePriorFetch: metersSincePriorFetch,
+            msSincePriorFetch: msSincePriorFetch,
+            generation: generation,
+          )
+        : null;
+
+    final bearing = AndroidLocationCompat.positionBearingIfHasBearing(location);
+    final out = await mapbox.fetchSpeedLimit(
+      latitude: location.latitude,
+      longitude: location.longitude,
+      headingDegrees: bearing,
+    );
+
+    if (generation != _speedFetchGeneration) return;
+
+    final resolved = out.data;
+    final rawMph = resolved.speedLimitMph;
+    if (generation != _speedFetchGeneration) return;
+
+    _mapboxRouteModel = out.sectionModel;
+    if (rawMph != null) {
+      _stickyRoadSegment = null;
+      _sectionWalkAlongContinuity.reset();
+      _applyPrimaryResolvedLimit(
+        location: location,
+        vehicleSpeedMph: vehicleSpeedMph,
+        rawMph: rawMph,
+        segmentKey: resolved.segmentKey,
+        functionalClass: resolved.functionalClass,
+        logCompareRow: logCompare,
+        hereTelemetry: null,
+        logFields: logFields,
+        hereLimitFromNetworkFetch: true,
+        hereResolvePath: 'network',
+      );
+    } else {
+      _sectionWalkAlongContinuity.reset();
+      SpeedLimitLoggingContext.updateRoadFunctionalClass(resolved.functionalClass);
+      onSpeedUpdate(vehicleSpeedMph, _currentSpeedLimitMph);
+    }
+  }
+
+  /// Primary speed limit resolution (HERE, TomTom, or Mapbox depending on [PreferencesManager.resolvedPrimarySpeedLimitProvider]).
   ///
-  /// Sequence:
-  /// 1. Sanity / route context for raw HERE [rawMph] (caller already chose section-walk, sticky, or network).
-  /// 2. Optional local [SpeedLimitStabilizer] + material / small-up / moderate-down gates.
-  /// 3. [DownwardLimitDebouncer] commit → assign [_currentSpeedLimitMph].
-  /// 4. [SpeedLimitLoggingContext.setHereCompareMphCell] + optional [SpeedFetchDebugLogger.append] with TomTom/Mapbox
-  ///    peek columns (comparison mph from the same tick’s cache).
-  /// 5. [onSpeedUpdate] — **sole** driver for alert UI / audio in the session notifier.
-  ///
-  /// TomTom/Mapbox **never** enter this method; they run in [_enqueueCompareSideEffectsForLocationTick] / async queues.
-  void _applyHereResolvedLimit({
+  /// Local [SpeedLimitStabilizer] applies only when the primary is HERE and [shouldApplyLocalStabilizer].
+  void _applyPrimaryResolvedLimit({
     required Position location,
     required double vehicleSpeedMph,
     required int rawMph,
@@ -1101,7 +1528,7 @@ class LocationProcessor {
     final routeCtx = _routeContextKey(functionalClass, segmentKey);
 
     var displayMph = rawForPipeline;
-    if (shouldApplyLocalStabilizer()) {
+    if (_primaryHere && shouldApplyLocalStabilizer()) {
       if (_lastRouteContextKey != null && routeCtx != _lastRouteContextKey) {
         _speedLimitStabilizer.clear();
         _materialChangeGate.reset();
@@ -1176,7 +1603,7 @@ class LocationProcessor {
     _currentSpeedLimitMph = finalDisplay.toDouble();
     SpeedLimitLoggingContext.setHereCompareMphCell(rawForPipeline, hereLimitFromNetworkFetch);
     if (logCompareRow && preferencesManager.logSpeedFetchesToFile) {
-      final peek = _comparePeekMphForLogs();
+      final peek = _vendorPeekMphForLogs();
       unawaited(
         SpeedFetchDebugLogger.append(
           preferencesManager: preferencesManager,
@@ -1186,7 +1613,9 @@ class LocationProcessor {
           rawMph: rawForPipeline,
           displayMph: finalDisplay,
           segmentKey: segmentKey,
-          sourceTag: useLocalHereForAlerts() ? 'local_here' : 'remote_here',
+          sourceTag: _primaryHere
+              ? (useLocalHereForAlerts() ? 'local_here' : 'remote_here')
+              : (_primaryTomTom ? 'tomtom' : 'mapbox'),
           tomtomMph: peek.$1,
           mapboxMph: peek.$2,
           hereTelemetry: hereTelemetry,
@@ -1289,16 +1718,6 @@ class LocationProcessor {
 
   static const double MIN_DISPLACEMENT_SINCE_FETCH_M = 100.0;
   static const double MIN_HEADING_CHANGE_FOR_FETCH_DEG = 45.0;
-
-  static const double TOMTOM_NETWORK_MIN_DISPLACEMENT_M = 480.0;
-  static const double TOMTOM_NETWORK_MIN_HEADING_CHANGE_DEG = 45.0;
-  static const double TOMTOM_ALONG_POLYLINE_MAX_CROSS_TRACK_M = 72.0;
-  static const double TOMTOM_ALONG_POLYLINE_PAST_END_BUFFER_M = 90.0;
-
-  static const double MAPBOX_NETWORK_MIN_DISPLACEMENT_M = 480.0;
-  static const double MAPBOX_NETWORK_MIN_HEADING_CHANGE_DEG = 45.0;
-  static const double MAPBOX_ALONG_POLYLINE_MAX_CROSS_TRACK_M = 70.0;
-  static const double MAPBOX_ALONG_POLYLINE_PAST_END_BUFFER_M = 88.0;
 
   static const double HEADING_UTURN_MIN_MPH = 12.0;
   static const double U_TURN_HEADING_DELTA_DEG = 125.0;

@@ -28,10 +28,10 @@ class SpeedLimitLoggingContext {
 
   static int? _lastFunctionalClass;
 
-  static int? _lastTomTomCompareMph;
-  static int? _lastMapboxCompareMph;
-  static String _lastTomTomCompareMphCell = '';
-  static String _lastMapboxCompareMphCell = '';
+  static int? _lastTomTomMph;
+  static int? _lastMapboxMph;
+  static String _lastTomTomMphCell = '';
+  static String _lastMapboxMphCell = '';
   static String _hereCompareMphCell = '';
   static String _hereAlertResolvePath = '';
 
@@ -55,15 +55,16 @@ class SpeedLimitLoggingContext {
     return networkFetch ? '**$s**' : s;
   }
 
-  static void setCompareProviderMphCells(
-    String trigger,
-    int? tomtomMph,
-    int? mapboxMph,
-  ) {
-    _lastTomTomCompareMph = tomtomMph;
-    _lastMapboxCompareMph = mapboxMph;
-    _lastTomTomCompareMphCell = formatMphCsvCell(tomtomMph, trigger == 'tomtom_fetch');
-    _lastMapboxCompareMphCell = formatMphCsvCell(mapboxMph, trigger == 'mapbox_fetch');
+  /// Updates only the TomTom mph columns (independent of Mapbox).
+  static void setTomTomMphCell(String trigger, int? mph) {
+    _lastTomTomMph = mph;
+    _lastTomTomMphCell = formatMphCsvCell(mph, trigger == 'tomtom_fetch');
+  }
+
+  /// Updates only the Mapbox mph columns (independent of TomTom).
+  static void setMapboxMphCell(String trigger, int? mph) {
+    _lastMapboxMph = mph;
+    _lastMapboxMphCell = formatMphCsvCell(mph, trigger == 'mapbox_fetch');
   }
 
   static void setHereCompareMphCell(int? mph, bool fromNetworkFetch) {
@@ -72,15 +73,15 @@ class SpeedLimitLoggingContext {
 
   static String hereCompareMphForCsv() => _hereCompareMphCell;
 
-  static String compareTomTomMphForCsv() =>
-      _lastTomTomCompareMphCell.isNotEmpty
-          ? _lastTomTomCompareMphCell
-          : formatMphCsvCell(_lastTomTomCompareMph, false);
+  static String tomTomMphCellForCsv() =>
+      _lastTomTomMphCell.isNotEmpty
+          ? _lastTomTomMphCell
+          : formatMphCsvCell(_lastTomTomMph, false);
 
-  static String compareMapboxMphForCsv() =>
-      _lastMapboxCompareMphCell.isNotEmpty
-          ? _lastMapboxCompareMphCell
-          : formatMphCsvCell(_lastMapboxCompareMph, false);
+  static String mapboxMphCellForCsv() =>
+      _lastMapboxMphCell.isNotEmpty
+          ? _lastMapboxMphCell
+          : formatMphCsvCell(_lastMapboxMph, false);
 
   static bool _hasFix = false;
   static double _lat = 0;
@@ -120,10 +121,10 @@ class SpeedLimitLoggingContext {
     _prevOdometerLat = double.nan;
     _prevOdometerLng = double.nan;
     _lastFunctionalClass = null;
-    _lastTomTomCompareMph = null;
-    _lastMapboxCompareMph = null;
-    _lastTomTomCompareMphCell = '';
-    _lastMapboxCompareMphCell = '';
+    _lastTomTomMph = null;
+    _lastMapboxMph = null;
+    _lastTomTomMphCell = '';
+    _lastMapboxMphCell = '';
     _hereCompareMphCell = '';
     _hereAlertResolvePath = '';
   }

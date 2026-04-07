@@ -4,7 +4,8 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config/app_config.dart';
-import '../core/constants.dart';
+import '../core/constants.dart'
+    show AlertRunMode, AppThemeMode, SpeedLimitPrimaryProvider;
 
 /// App preferences: same **keys**, **defaults**, and (on Android) **XML file** `SpeedAlertPrefs` via
 /// [MainActivity] Pigeon override + [registerAndroidSharedPrefsAllowListBeforeOpen].
@@ -23,6 +24,8 @@ class PreferencesManager {
   static const _kApiHere = 'api_here_enabled';
   static const _kApiTomTom = 'api_tomtom_enabled';
   static const _kApiMapbox = 'api_mapbox_enabled';
+  /// [SpeedLimitPrimaryProvider.here], [SpeedLimitPrimaryProvider.tomTom], or [SpeedLimitPrimaryProvider.mapbox].
+  static const _kPrimarySpeedLimitProvider = 'primary_speed_limit_provider';
   static const _kUseRemoteSpeedApi = 'use_remote_speed_api';
   static const _kUseLocalStabilizer = 'use_local_speed_stabilizer';
   static const _kLogSpeedFetches = 'log_speed_fetches';
@@ -48,6 +51,7 @@ class PreferencesManager {
     'api_here_enabled',
     'api_tomtom_enabled',
     'api_mapbox_enabled',
+    'primary_speed_limit_provider',
     'sim_dest_preset',
     'sim_custom_dest_query',
     'sim_custom_dest_latlng',
@@ -106,6 +110,46 @@ class PreferencesManager {
 
   bool get isMapboxApiEnabled => _prefs.getBool(_kApiMapbox) ?? false;
   set isMapboxApiEnabled(bool v) => _prefs.setBool(_kApiMapbox, v);
+
+  /// Which API drives the **main** speed limit (display + alerts). Default HERE (matches prior single-provider behavior).
+  int get primarySpeedLimitProvider =>
+      (_prefs.getInt(_kPrimarySpeedLimitProvider) ?? SpeedLimitPrimaryProvider.here)
+          .clamp(SpeedLimitPrimaryProvider.here, SpeedLimitPrimaryProvider.mapbox);
+
+  set primarySpeedLimitProvider(int v) =>
+      _prefs.setInt(_kPrimarySpeedLimitProvider, v.clamp(SpeedLimitPrimaryProvider.here, SpeedLimitPrimaryProvider.mapbox));
+
+  /// Effective primary when the stored choice is disabled — first enabled in order HERE → TomTom → Mapbox, else HERE.
+  int get resolvedPrimarySpeedLimitProvider {
+    final want = primarySpeedLimitProvider;
+    if (want == SpeedLimitPrimaryProvider.here && isHereApiEnabled) {
+      return SpeedLimitPrimaryProvider.here;
+    }
+    if (want == SpeedLimitPrimaryProvider.tomTom && isTomTomApiEnabled) {
+      return SpeedLimitPrimaryProvider.tomTom;
+    }
+    if (want == SpeedLimitPrimaryProvider.mapbox && isMapboxApiEnabled) {
+      return SpeedLimitPrimaryProvider.mapbox;
+    }
+    if (isHereApiEnabled) return SpeedLimitPrimaryProvider.here;
+    if (isTomTomApiEnabled) return SpeedLimitPrimaryProvider.tomTom;
+    if (isMapboxApiEnabled) return SpeedLimitPrimaryProvider.mapbox;
+    return SpeedLimitPrimaryProvider.here;
+  }
+
+  /// Short label for UI (speed card, session [SpeedLimitData].provider, etc.).
+  String get primarySpeedLimitProviderDisplayName {
+    switch (resolvedPrimarySpeedLimitProvider) {
+      case SpeedLimitPrimaryProvider.here:
+        return 'HERE Maps';
+      case SpeedLimitPrimaryProvider.tomTom:
+        return 'TomTom';
+      case SpeedLimitPrimaryProvider.mapbox:
+        return 'Mapbox';
+      default:
+        return 'HERE Maps';
+    }
+  }
 
   /// `false` if key never written; Edge is used only when true and the build has Supabase configured.
   bool get useRemoteSpeedApi {

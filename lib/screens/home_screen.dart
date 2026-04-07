@@ -105,13 +105,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with RouteAware {
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
             child: SpeedSessionSummaryCard(
+              primaryProviderLabel: preferencesManager.primarySpeedLimitProviderDisplayName,
               isTestingTab: false,
               isSimulating: drive.isSimulating,
               gpsSpeedMph: drive.speedMph,
               simulatedSpeedMph: drive.simulatedSpeedMph,
               limitMph: drive.limitMph,
-              tomTomCompareMph: drive.tomTomCompareMph,
-              mapboxCompareMph: drive.mapboxCompareMph,
+              resolvedPrimarySpeedLimitProvider:
+                  preferencesManager.resolvedPrimarySpeedLimitProvider,
+              tomTomMph: drive.tomTomMph,
+              mapboxMph: drive.mapboxMph,
               alertThresholdMph: threshold,
               suppressAlertsUnder15Mph: preferencesManager.suppressAlertsWhenUnder15Mph,
             ),

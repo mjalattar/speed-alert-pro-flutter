@@ -2,16 +2,13 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import '../core/android_location_compat.dart';
-import '../core/compare_provider_constants.dart';
+import '../core/speed_provider_constants.dart';
 import '../models/speed_limit_data.dart';
 import 'cross_track_geometry.dart';
 import 'geo_bearing.dart';
 import 'geo_coordinate.dart';
 
 const double _alongEpsM = 0.5;
-
-/// Along polyline distance (m) within which TomTom/Mapbox use [vehicleAnchorMph] (position-based, not slice tiling).
-const double _vehicleAnchorAlongMaxM = 55.0;
 
 /// Speed limits tiled along a polyline (Mapbox `annotation.maxspeed` or TomTom Snap `route[]`).
 /// Segment lengths use WGS84 geodesics via [AndroidLocationCompat].
@@ -69,7 +66,7 @@ class AnnotationSectionSpeedModel {
     final anchor = vehicleAnchorMph;
     if (anchor != null &&
         provider == 'TomTom' &&
-        along <= _vehicleAnchorAlongMaxM) {
+        along <= SpeedProviderConstants.tomtomSecondaryVehicleAnchorAlongMaxM) {
       return SpeedLimitData(
         provider: provider,
         speedLimitMph: anchor,
@@ -81,7 +78,7 @@ class AnnotationSectionSpeedModel {
     }
     if (anchor != null &&
         provider == 'Mapbox' &&
-        along <= _vehicleAnchorAlongMaxM) {
+        along <= SpeedProviderConstants.mapboxSecondaryVehicleAnchorAlongMaxM) {
       return SpeedLimitData(
         provider: provider,
         speedLimitMph: anchor,
@@ -124,7 +121,7 @@ class AnnotationSectionSpeedModel {
 
   static AnnotationSectionSpeedModel? fromMapboxDirectionsJson(
     String jsonStr, {
-    int ttlMs = 30 * 60 * 1000,
+    int ttlMs = SpeedProviderConstants.mapboxSecondaryRouteModelTtlMs,
     double? vehicleLat,
     double? vehicleLng,
     double? headingDegrees,
@@ -273,7 +270,7 @@ class AnnotationSectionSpeedModel {
 
   static AnnotationSectionSpeedModel? fromTomTomSnapRouteJson(
     String jsonStr, {
-    int ttlMs = 30 * 60 * 1000,
+    int ttlMs = SpeedProviderConstants.tomtomSecondaryRouteModelTtlMs,
     double? vehicleLat,
     double? vehicleLng,
     double? headingDegrees,
@@ -442,7 +439,7 @@ class AnnotationSectionSpeedModel {
           .where(
             (c) =>
                 c.d <=
-                minD + CompareProviderConstants.tomtomProjectedPointHeadingTieM,
+                minD + SpeedProviderConstants.tomtomProjectedPointHeadingTieM,
           )
           .toList();
       if (near.length > 1) {

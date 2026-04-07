@@ -7,11 +7,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 
 import '../core/android_system_clock.dart';
-import '../core/constants.dart';
+import '../core/constants.dart' show AlertRunMode, kLowSpeedAlertSuppressBelowMph;
 import '../engine/geo_coordinate.dart';
 import '../engine/here_section_speed_model.dart';
 import '../models/speed_limit_data.dart';
-import '../services/compare_providers_service.dart';
+import '../services/speed_providers/mapbox_speed_provider.dart';
+import '../services/speed_providers/tomtom_speed_provider.dart';
 import '../services/fused_driving_location.dart';
 import '../services/location_processor.dart';
 import '../services/mock_location_tester.dart';
@@ -41,8 +42,8 @@ class DrivingSessionState {
     this.lastError,
     this.hereData,
     this.lastFetchUtc,
-    this.tomTomCompareMph,
-    this.mapboxCompareMph,
+    this.tomTomMph,
+    this.mapboxMph,
     this.simulatedSpeedMph = 30,
     this.drivingSessionPipelineUpdates = 0,
     this.simulationRoutePolyline = const [],
@@ -58,8 +59,8 @@ class DrivingSessionState {
   final String? lastError;
   final SpeedLimitData? hereData;
   final DateTime? lastFetchUtc;
-  final int? tomTomCompareMph;
-  final int? mapboxCompareMph;
+  final int? tomTomMph;
+  final int? mapboxMph;
 
   /// Synthetic route simulation speed ([MockLocationTester] +/- adjustment).
   final int simulatedSpeedMph;
@@ -92,8 +93,8 @@ class DrivingSessionState {
     String? lastError,
     SpeedLimitData? hereData,
     DateTime? lastFetchUtc,
-    int? tomTomCompareMph,
-    int? mapboxCompareMph,
+    int? tomTomMph,
+    int? mapboxMph,
     int? simulatedSpeedMph,
     int? drivingSessionPipelineUpdates,
     List<GeoCoordinate>? simulationRoutePolyline,
@@ -109,8 +110,8 @@ class DrivingSessionState {
       lastError: lastError ?? this.lastError,
       hereData: hereData ?? this.hereData,
       lastFetchUtc: lastFetchUtc ?? this.lastFetchUtc,
-      tomTomCompareMph: tomTomCompareMph ?? this.tomTomCompareMph,
-      mapboxCompareMph: mapboxCompareMph ?? this.mapboxCompareMph,
+      tomTomMph: tomTomMph ?? this.tomTomMph,
+      mapboxMph: mapboxMph ?? this.mapboxMph,
       simulatedSpeedMph: simulatedSpeedMph ?? this.simulatedSpeedMph,
       drivingSessionPipelineUpdates:
           drivingSessionPipelineUpdates ?? this.drivingSessionPipelineUpdates,
@@ -130,7 +131,8 @@ class DrivingSessionNotifier extends StateNotifier<DrivingSessionState> {
   StreamSubscription<Position>? _sub;
   bool _simulationActive = false;
   LocationProcessor? _processor;
-  CompareProvidersService? _compare;
+  TomTomSpeedProvider? _tomTom;
+  MapboxSpeedProvider? _mapbox;
   final MockLocationTester _mockLocationTester = MockLocationTester();
 
   /// Ordered drain so [AndroidSystemClock.elapsedRealtimeMs] matches fix order (Geolocator Android).
@@ -189,18 +191,18 @@ class DrivingSessionNotifier extends StateNotifier<DrivingSessionState> {
     }
   }
 
-  void _syncCompareFromCache() {
-    final c = _compare;
-    if (c == null) return;
+  void _syncVendorMphFromCaches() {
+    final tt = _tomTom;
+    final mb = _mapbox;
+    if (tt == null || mb == null) return;
     final pm = ref.read(preferencesProvider).preferencesManager;
     if (!pm.isTomTomApiEnabled && !pm.isMapboxApiEnabled) {
-      state = state.copyWith(tomTomCompareMph: null, mapboxCompareMph: null);
+      state = state.copyWith(tomTomMph: null, mapboxMph: null);
       return;
     }
-    final p = c.peekCachedCompareTomTomMapboxMph();
     state = state.copyWith(
-      tomTomCompareMph: p.$1,
-      mapboxCompareMph: p.$2,
+      tomTomMph: pm.isTomTomApiEnabled ? tt.peekCached()?.speedLimitMph : null,
+      mapboxMph: pm.isMapboxApiEnabled ? mb.peekCached()?.speedLimitMph : null,
     );
   }
 
@@ -279,21 +281,25 @@ class DrivingSessionNotifier extends StateNotifier<DrivingSessionState> {
     await stopRouteSimulation();
     await _sub?.cancel();
 
-    final compare = ref.read(compareProvidersServiceProvider);
-    compare.onCacheChanged = () {
-      _syncCompareFromCache();
-    };
-    _compare = compare;
+    final tomTom = ref.read(tomTomSpeedProviderProvider);
+    final mapbox = ref.read(mapboxSpeedProviderProvider);
+    void onVendorSlice(String _) => _syncVendorMphFromCaches();
+    tomTom.onSliceChanged = onVendorSlice;
+    mapbox.onSliceChanged = onVendorSlice;
+    _tomTom = tomTom;
+    _mapbox = mapbox;
 
     _processor = LocationProcessor(
       preferencesManager: ref.read(preferencesProvider).preferencesManager,
       speedLimitAggregator: ref.read(speedLimitAggregatorProvider),
-      compare: compare,
+      tomTom: tomTom,
+      mapbox: mapbox,
       onSpeedUpdate: (vehicleMph, limitMph) {
         var d = state.drivingSessionPipelineUpdates;
         if (!_simulationActive && state.isTracking) {
           d++;
         }
+        final pm = ref.read(preferencesProvider).preferencesManager;
         state = state.copyWith(
           speedMph: vehicleMph,
           limitMph: limitMph,
@@ -301,7 +307,7 @@ class DrivingSessionNotifier extends StateNotifier<DrivingSessionState> {
           drivingSessionPipelineUpdates: d,
           hereData: limitMph != null
               ? SpeedLimitData(
-                  provider: 'HERE Maps',
+                  provider: pm.primarySpeedLimitProviderDisplayName,
                   speedLimitMph: limitMph.round(),
                   confidence: ConfidenceLevel.high,
                   source: 'LocationProcessor',
@@ -437,8 +443,8 @@ class DrivingSessionNotifier extends StateNotifier<DrivingSessionState> {
           lastFixLng: pos.longitude,
         );
         _processor?.processNewLocation(pos);
-        _syncCompareFromCache();
-        scheduleMicrotask(_syncCompareFromCache);
+        _syncVendorMphFromCaches();
+        scheduleMicrotask(_syncVendorMphFromCaches);
       },
       onRouteCompleted: () {
         unawaited(stopRouteSimulation());
@@ -464,7 +470,7 @@ class DrivingSessionNotifier extends StateNotifier<DrivingSessionState> {
       limitMph: null,
       simulationRoutePolyline: const [],
     );
-    _syncCompareFromCache();
+    _syncVendorMphFromCaches();
     _processor?.clearLimitCacheAfterSimulation();
     if (state.isTracking && _processor != null) {
       if (_useAndroidFused()) {
@@ -477,7 +483,7 @@ class DrivingSessionNotifier extends StateNotifier<DrivingSessionState> {
             ),
           );
           _processor?.processNewLocation(p);
-          _syncCompareFromCache();
+          _syncVendorMphFromCaches();
         } catch (_) {}
       } else {
         final stream = Geolocator.getPositionStream(
@@ -491,7 +497,7 @@ class DrivingSessionNotifier extends StateNotifier<DrivingSessionState> {
             locationSettings: _buildLocationSettings(),
           );
           _processor?.processNewLocation(p);
-          _syncCompareFromCache();
+          _syncVendorMphFromCaches();
         } catch (_) {}
       }
     }
@@ -511,8 +517,10 @@ class DrivingSessionNotifier extends StateNotifier<DrivingSessionState> {
     }
     _processor?.clearLimitCacheAfterSimulation();
     _processor = null;
-    _compare?.onCacheChanged = null;
-    _compare = null;
+    _tomTom?.onSliceChanged = null;
+    _mapbox?.onSliceChanged = null;
+    _tomTom = null;
+    _mapbox = null;
     await OverlayPlatformChannel.hide();
     if (_useAndroidFused()) {
       final pm = ref.read(preferencesProvider).preferencesManager;
@@ -578,7 +586,7 @@ class DrivingSessionNotifier extends StateNotifier<DrivingSessionState> {
       androidElapsedRealtimeNanos: androidElapsedRealtimeNanos,
       androidLocationProvider: androidLocationProvider,
     );
-    _syncCompareFromCache();
+    _syncVendorMphFromCaches();
   }
 
   @override
@@ -596,8 +604,10 @@ class DrivingSessionNotifier extends StateNotifier<DrivingSessionState> {
       unawaited(FusedDrivingLocation.setSimulationActive(false));
       unawaited(FusedDrivingLocation.stop());
     }
-    _compare?.onCacheChanged = null;
-    _compare = null;
+    _tomTom?.onSliceChanged = null;
+    _mapbox?.onSliceChanged = null;
+    _tomTom = null;
+    _mapbox = null;
     unawaited(OverlayPlatformChannel.hide());
     super.dispose();
   }

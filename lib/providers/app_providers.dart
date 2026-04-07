@@ -3,7 +3,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../config/app_config.dart';
 import '../core/app_foreground_tracker.dart';
-import '../services/compare_providers_service.dart';
+import '../services/speed_providers/mapbox_speed_provider.dart';
+import '../services/speed_providers/tomtom_speed_provider.dart';
+import '../services/here/here_alert_route_provider.dart';
 import '../services/here_api_service.dart';
 import '../services/here_edge_function_client.dart';
 import '../services/preferences_manager.dart';
@@ -56,20 +58,36 @@ final hereEdgeFunctionClientProvider = Provider<HereEdgeFunctionClient?>((ref) {
   );
 });
 
-/// TomTom / Mapbox compare fetches and sticky cache (not the HERE alert limit path).
-final compareProvidersServiceProvider = Provider<CompareProvidersService>((ref) {
-  return CompareProvidersService(
+/// TomTom Snap sticky cache + HTTP (independent of HERE and Mapbox).
+final tomTomSpeedProviderProvider = Provider<TomTomSpeedProvider>((ref) {
+  return TomTomSpeedProvider(
     preferencesManager: ref.watch(preferencesProvider).preferencesManager,
   );
 });
 
-/// HERE alert + progressive compare rows (Edge or local REST).
-final speedLimitAggregatorProvider = Provider<SpeedLimitAggregator>((ref) {
-  return SpeedLimitAggregator(
+/// Mapbox Directions sticky cache + HTTP (independent of HERE and TomTom).
+final mapboxSpeedProviderProvider = Provider<MapboxSpeedProvider>((ref) {
+  return MapboxSpeedProvider(
+    preferencesManager: ref.watch(preferencesProvider).preferencesManager,
+  );
+});
+
+/// HERE Routing / Edge — alert limit and map surfaces only (no TomTom/Mapbox).
+final hereAlertRouteProviderProvider = Provider<HereAlertRouteProvider>((ref) {
+  return HereAlertRouteProvider(
     preferencesManager: ref.watch(preferencesProvider).preferencesManager,
     hereApi: ref.watch(hereApiServiceProvider),
     hereEdgeFunctionClient: ref.watch(hereEdgeFunctionClientProvider),
-    compare: ref.watch(compareProvidersServiceProvider),
+  );
+});
+
+/// HERE alert + progressive speed rows (Edge or local REST).
+final speedLimitAggregatorProvider = Provider<SpeedLimitAggregator>((ref) {
+  return SpeedLimitAggregator(
+    preferencesManager: ref.watch(preferencesProvider).preferencesManager,
+    here: ref.watch(hereAlertRouteProviderProvider),
+    tomTom: ref.watch(tomTomSpeedProviderProvider),
+    mapbox: ref.watch(mapboxSpeedProviderProvider),
   );
 });
 

@@ -16,7 +16,8 @@ class SpeedLimitApiRequestLogger {
   SpeedLimitApiRequestLogger._();
 
   static final Object _lock = Object();
-  static String _lastCompareCacheEventSignature = '';
+  static String _lastTomTomCacheLogSignature = '';
+  static String _lastMapboxCacheLogSignature = '';
 
   static const String _csvHeader =
       'utc_time,event_type,category,method,url_redacted,http_code,note,'
@@ -36,7 +37,8 @@ class SpeedLimitApiRequestLogger {
   static void clearSessionStorage(SpeedDebugLogSession session) {
     if (session == SpeedDebugLogSession.none) return;
     synchronized(_lock, () {
-      _lastCompareCacheEventSignature = '';
+      _lastTomTomCacheLogSignature = '';
+      _lastMapboxCacheLogSignature = '';
       final f = SpeedAlertLogFilesystem.sessionLogFile(session);
       if (f.existsSync()) f.deleteSync();
       final legacyName = switch (session) {
@@ -113,8 +115,8 @@ class SpeedLimitApiRequestLogger {
       stabilized: '',
       sourceTag: '',
       segmentKey: '',
-      tomtomMph: SpeedLimitLoggingContext.compareTomTomMphForCsv(),
-      mapboxMph: SpeedLimitLoggingContext.compareMapboxMphForCsv(),
+      tomtomMph: SpeedLimitLoggingContext.tomTomMphCellForCsv(),
+      mapboxMph: SpeedLimitLoggingContext.mapboxMphCellForCsv(),
       hereReqUtc: '',
       hereResUtc: '',
       hereSrc: '',
@@ -188,10 +190,10 @@ class SpeedLimitApiRequestLogger {
         : SpeedLimitLoggingContext.hereCompareMphForCsv();
     final ttStr = tomtomMph != null
         ? tomtomMph.toString()
-        : SpeedLimitLoggingContext.compareTomTomMphForCsv();
+        : SpeedLimitLoggingContext.tomTomMphCellForCsv();
     final mbStr = mapboxMph != null
         ? mapboxMph.toString()
-        : SpeedLimitLoggingContext.compareMapboxMphForCsv();
+        : SpeedLimitLoggingContext.mapboxMphCellForCsv();
     final roadFc = ht?.functionalClass != null
         ? SpeedLimitLoggingContext.functionalClassHumanLabel(ht!.functionalClass!)
         : snap.roadFunctionalClass;
@@ -250,10 +252,9 @@ class SpeedLimitApiRequestLogger {
     );
   }
 
-  /// One row per TomTom or Mapbox compare HTTP response: anchor vs slice, snap/edge projection, lead waypoint.
-  static Future<void> appendCompareFetchDiagnostics({
+  /// One row per TomTom Snap fetch diagnostics (along-polyline slice vs anchor, snap projection).
+  static Future<void> appendTomTomFetchDiagnostics({
     required PreferencesManager preferencesManager,
-    required String provider,
     required double vehicleLat,
     required double vehicleLng,
     double? bearingDeg,
@@ -261,8 +262,7 @@ class SpeedLimitApiRequestLogger {
     required String leadDestLatLng,
     required int? reportedMph,
     required int? sliceMph,
-    TomTomSnapVehicleProjection? tomTomProjection,
-    MapboxVehicleEdgeProjection? mapboxEdge,
+    required TomTomSnapVehicleProjection? tomTomProjection,
   }) async {
     if (!isLoggingEnabled(preferencesManager)) return;
     if (!SpeedDebugLogSessionHolder.isSessionActive()) return;
@@ -283,7 +283,7 @@ class SpeedLimitApiRequestLogger {
       roadFunctionalClass: snap.roadFunctionalClass,
       odometerMeters: snap.odometerMeters,
     );
-    final buf = StringBuffer(provider)
+    final buf = StringBuffer('TomTom')
       ..write('|along_m=${alongMeters.toStringAsFixed(1)}')
       ..write('|lead=$leadDestLatLng')
       ..write('|reported_mph=${reportedMph ?? ''}')
@@ -295,32 +295,27 @@ class SpeedLimitApiRequestLogger {
         ..write('|snap_lng=${tomTomProjection.snapLng.toStringAsFixed(7)}')
         ..write('|snap_dist_m=${tomTomProjection.snapDistanceM.toStringAsFixed(1)}');
     }
-    if (mapboxEdge != null) {
-      buf
-        ..write('|edge_idx=${mapboxEdge.edgeIndex}')
-        ..write('|edge_mph=${mapboxEdge.edgeMph ?? ''}');
-    }
     _writeRow(
       preferencesManager: preferencesManager,
       utc: utcNow(),
       eventType: 'compare_fetch_diag',
-      category: 'compare_providers',
+      category: 'speed_providers',
       method: '',
       urlRedacted: '',
       httpCode: -1,
-      note: 'Compare provider fetch diagnostics (see compare_fetch_diag column).',
+      note: 'TomTom fetch diagnostics (see compare_fetch_diag column).',
       requestReasonHuman:
-          'TomTom/Mapbox: along-polyline slice vs vehicle anchor; snap/edge indices; lead waypoint.',
+          'TomTom Snap: along-polyline slice vs vehicle anchor; snap indices.',
       snap: rowSnap,
       vehicleSpeedMph: '',
       rawMph: '',
       displayMph: '',
       hereCompareMph: SpeedLimitLoggingContext.hereCompareMphForCsv(),
       stabilized: '',
-      sourceTag: 'compare_fetch_diag',
+      sourceTag: 'tomtom_fetch_diag',
       segmentKey: '',
-      tomtomMph: SpeedLimitLoggingContext.compareTomTomMphForCsv(),
-      mapboxMph: SpeedLimitLoggingContext.compareMapboxMphForCsv(),
+      tomtomMph: SpeedLimitLoggingContext.tomTomMphCellForCsv(),
+      mapboxMph: SpeedLimitLoggingContext.mapboxMphCellForCsv(),
       hereReqUtc: '',
       hereResUtc: '',
       hereSrc: '',
@@ -337,35 +332,159 @@ class SpeedLimitApiRequestLogger {
     );
   }
 
-  static Future<void> appendCompareCacheUpdate({
+  /// One row per Mapbox Directions fetch diagnostics (along-polyline slice vs anchor, edge projection).
+  static Future<void> appendMapboxFetchDiagnostics({
+    required PreferencesManager preferencesManager,
+    required double vehicleLat,
+    required double vehicleLng,
+    double? bearingDeg,
+    required double alongMeters,
+    required String leadDestLatLng,
+    required int? reportedMph,
+    required int? sliceMph,
+    required MapboxVehicleEdgeProjection? mapboxEdge,
+  }) async {
+    if (!isLoggingEnabled(preferencesManager)) return;
+    if (!SpeedDebugLogSessionHolder.isSessionActive()) return;
+    final snap = await SpeedLimitLoggingContext.snapshotAsync();
+    final bearStr =
+        bearingDeg != null && bearingDeg.isFinite ? bearingDeg.toStringAsFixed(1) : '';
+    final rowSnap = LoggingSnapshot(
+      hasFix: true,
+      lat: vehicleLat,
+      lng: vehicleLng,
+      bearingDeg: bearStr,
+      speedMps: snap.speedMps,
+      horizontalAccuracyM: snap.horizontalAccuracyM,
+      altitudeM: snap.altitudeM,
+      verticalAccuracyM: snap.verticalAccuracyM,
+      provider: snap.provider,
+      fixAgeMs: snap.fixAgeMs,
+      roadFunctionalClass: snap.roadFunctionalClass,
+      odometerMeters: snap.odometerMeters,
+    );
+    final buf = StringBuffer('Mapbox')
+      ..write('|along_m=${alongMeters.toStringAsFixed(1)}')
+      ..write('|lead=$leadDestLatLng')
+      ..write('|reported_mph=${reportedMph ?? ''}')
+      ..write('|slice_mph=${sliceMph ?? ''}');
+    if (mapboxEdge != null) {
+      buf
+        ..write('|edge_idx=${mapboxEdge.edgeIndex}')
+        ..write('|edge_mph=${mapboxEdge.edgeMph ?? ''}');
+    }
+    _writeRow(
+      preferencesManager: preferencesManager,
+      utc: utcNow(),
+      eventType: 'compare_fetch_diag',
+      category: 'speed_providers',
+      method: '',
+      urlRedacted: '',
+      httpCode: -1,
+      note: 'Mapbox fetch diagnostics (see compare_fetch_diag column).',
+      requestReasonHuman:
+          'Mapbox Directions: along-polyline slice vs vehicle anchor; edge indices.',
+      snap: rowSnap,
+      vehicleSpeedMph: '',
+      rawMph: '',
+      displayMph: '',
+      hereCompareMph: SpeedLimitLoggingContext.hereCompareMphForCsv(),
+      stabilized: '',
+      sourceTag: 'mapbox_fetch_diag',
+      segmentKey: '',
+      tomtomMph: SpeedLimitLoggingContext.tomTomMphCellForCsv(),
+      mapboxMph: SpeedLimitLoggingContext.mapboxMphCellForCsv(),
+      hereReqUtc: '',
+      hereResUtc: '',
+      hereSrc: '',
+      hereConf: '',
+      hereFc: '',
+      hereZones: '',
+      hereRouteLen: '',
+      hereErr: '',
+      metersSinceFetch: '',
+      msSinceFetch: '',
+      gpsTracePoints: '',
+      fetchGeneration: '',
+      compareFetchDiag: buf.toString(),
+    );
+  }
+
+  static Future<void> appendTomTomStickyCacheLog({
     required PreferencesManager preferencesManager,
     required String trigger,
     SpeedLimitData? tomtomData,
-    SpeedLimitData? mapboxData,
   }) async {
-    if (!preferencesManager.isTomTomApiEnabled &&
-        !preferencesManager.isMapboxApiEnabled) {
-      return;
-    }
+    if (!preferencesManager.isTomTomApiEnabled) return;
     if (!isLoggingEnabled(preferencesManager)) return;
     if (!SpeedDebugLogSessionHolder.isSessionActive()) return;
-    final sig =
-        '$trigger|${tomtomData?.speedLimitMph}|${mapboxData?.speedLimitMph}|${tomtomData?.source}|${mapboxData?.source}';
-    if (sig == _lastCompareCacheEventSignature) return;
-    _lastCompareCacheEventSignature = sig;
+    final sig = '$trigger|tomtom|${tomtomData?.speedLimitMph}|${tomtomData?.source}';
+    if (sig == _lastTomTomCacheLogSignature) return;
+    _lastTomTomCacheLogSignature = sig;
 
     String clip(String s, int max) => s.length <= max ? s : s.substring(0, max);
     final snap = await SpeedLimitLoggingContext.snapshotAsync();
     final ttM = tomtomData?.speedLimitMph;
-    final mbM = mapboxData?.speedLimitMph;
     final ttCell = SpeedLimitLoggingContext.formatMphCsvCell(ttM, trigger == 'tomtom_fetch');
-    final mbCell = SpeedLimitLoggingContext.formatMphCsvCell(mbM, trigger == 'mapbox_fetch');
-    final note = StringBuffer()
-      ..write('trigger=$trigger tomtom_mph=${ttM ?? ''} mapbox_mph=${mbM ?? ''}');
+    final note = StringBuffer()..write('trigger=$trigger tomtom_mph=${ttM ?? ''}');
     final ts = tomtomData != null ? tomtomData.source.trim() : '';
     if (ts.isNotEmpty) {
       note.write(' tomtom_src=${clip(ts.replaceAll('\n', ' '), 120)}');
     }
+    _writeRow(
+      preferencesManager: preferencesManager,
+      utc: utcNow(),
+      eventType: 'compare_cache_update',
+      category: 'speed_providers',
+      method: '',
+      urlRedacted: '',
+      httpCode: -1,
+      note: note.toString(),
+      requestReasonHuman:
+          'TomTom sticky cache updated (see note for mph and API source strings).',
+      snap: snap,
+      vehicleSpeedMph: '',
+      rawMph: '',
+      displayMph: '',
+      hereCompareMph: SpeedLimitLoggingContext.hereCompareMphForCsv(),
+      stabilized: '',
+      sourceTag: 'tomtom_cache',
+      segmentKey: '',
+      tomtomMph: ttCell,
+      mapboxMph: SpeedLimitLoggingContext.mapboxMphCellForCsv(),
+      hereReqUtc: '',
+      hereResUtc: '',
+      hereSrc: '',
+      hereConf: '',
+      hereFc: '',
+      hereZones: '',
+      hereRouteLen: '',
+      hereErr: '',
+      metersSinceFetch: '',
+      msSinceFetch: '',
+      gpsTracePoints: '',
+      fetchGeneration: '',
+      compareFetchDiag: '',
+    );
+  }
+
+  static Future<void> appendMapboxStickyCacheLog({
+    required PreferencesManager preferencesManager,
+    required String trigger,
+    SpeedLimitData? mapboxData,
+  }) async {
+    if (!preferencesManager.isMapboxApiEnabled) return;
+    if (!isLoggingEnabled(preferencesManager)) return;
+    if (!SpeedDebugLogSessionHolder.isSessionActive()) return;
+    final sig = '$trigger|mapbox|${mapboxData?.speedLimitMph}|${mapboxData?.source}';
+    if (sig == _lastMapboxCacheLogSignature) return;
+    _lastMapboxCacheLogSignature = sig;
+
+    String clip(String s, int max) => s.length <= max ? s : s.substring(0, max);
+    final snap = await SpeedLimitLoggingContext.snapshotAsync();
+    final mbM = mapboxData?.speedLimitMph;
+    final mbCell = SpeedLimitLoggingContext.formatMphCsvCell(mbM, trigger == 'mapbox_fetch');
+    final note = StringBuffer()..write('trigger=$trigger mapbox_mph=${mbM ?? ''}');
     final ms = mapboxData != null ? mapboxData.source.trim() : '';
     if (ms.isNotEmpty) {
       note.write(' mapbox_src=${clip(ms.replaceAll('\n', ' '), 120)}');
@@ -374,22 +493,22 @@ class SpeedLimitApiRequestLogger {
       preferencesManager: preferencesManager,
       utc: utcNow(),
       eventType: 'compare_cache_update',
-      category: 'compare_providers',
+      category: 'speed_providers',
       method: '',
       urlRedacted: '',
       httpCode: -1,
       note: note.toString(),
       requestReasonHuman:
-          'TomTom/Mapbox compare cache updated (see note for mph and API source strings).',
+          'Mapbox sticky cache updated (see note for mph and API source strings).',
       snap: snap,
       vehicleSpeedMph: '',
       rawMph: '',
       displayMph: '',
       hereCompareMph: SpeedLimitLoggingContext.hereCompareMphForCsv(),
       stabilized: '',
-      sourceTag: 'compare_cache',
+      sourceTag: 'mapbox_cache',
       segmentKey: '',
-      tomtomMph: ttCell,
+      tomtomMph: SpeedLimitLoggingContext.tomTomMphCellForCsv(),
       mapboxMph: mbCell,
       hereReqUtc: '',
       hereResUtc: '',
@@ -461,8 +580,8 @@ class SpeedLimitApiRequestLogger {
       stabilized: stabilizerMph != newDisplayMph ? '1' : '0',
       sourceTag: 'ui_display',
       segmentKey: seg,
-      tomtomMph: SpeedLimitLoggingContext.compareTomTomMphForCsv(),
-      mapboxMph: SpeedLimitLoggingContext.compareMapboxMphForCsv(),
+      tomtomMph: SpeedLimitLoggingContext.tomTomMphCellForCsv(),
+      mapboxMph: SpeedLimitLoggingContext.mapboxMphCellForCsv(),
       hereReqUtc: '',
       hereResUtc: '',
       hereSrc: '',

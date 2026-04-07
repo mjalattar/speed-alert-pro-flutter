@@ -168,13 +168,16 @@ class _TestingScreenState extends ConsumerState<TestingScreen> {
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
             child: SpeedSessionSummaryCard(
+              primaryProviderLabel: preferencesManager.primarySpeedLimitProviderDisplayName,
               isTestingTab: true,
               isSimulating: drive.isSimulating,
               gpsSpeedMph: drive.speedMph,
               simulatedSpeedMph: drive.simulatedSpeedMph,
               limitMph: drive.limitMph,
-              tomTomCompareMph: drive.tomTomCompareMph,
-              mapboxCompareMph: drive.mapboxCompareMph,
+              resolvedPrimarySpeedLimitProvider:
+                  preferencesManager.resolvedPrimarySpeedLimitProvider,
+              tomTomMph: drive.tomTomMph,
+              mapboxMph: drive.mapboxMph,
               alertThresholdMph: preferencesManager.alertThresholdMph,
               suppressAlertsUnder15Mph:
                   preferencesManager.suppressAlertsWhenUnder15Mph,
