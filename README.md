@@ -70,7 +70,7 @@ flutter test
 
 ## Project layout
 
-- `supabase/` — SQL migration, Edge Function `here-speed`, `config.toml`, **SETUP.txt**
+- `supabase/` — database schema SQL, Edge Function `here-speed`, `config.toml`, **SETUP.txt**
 - `lib/config/` — `AppConfig` (`String.fromEnvironment`)
 - `lib/services/` — HERE, Edge client, `LocationProcessor`, preferences, aggregators, platform bridges
 - `lib/providers/` — Riverpod state

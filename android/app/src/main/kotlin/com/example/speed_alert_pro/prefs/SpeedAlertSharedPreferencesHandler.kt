@@ -3,7 +3,6 @@ package com.example.speed_alert_pro.prefs
 import android.content.Context
 import android.content.SharedPreferences
 import android.util.Base64
-import android.util.Log
 import io.flutter.plugins.sharedpreferences.Messages
 import io.flutter.plugins.sharedpreferences.SharedPreferencesListEncoder
 import io.flutter.plugins.sharedpreferences.StringListObjectInputStream
@@ -59,32 +58,7 @@ class SpeedAlertSharedPreferencesHandler(context: Context) : Messages.SharedPref
     }
 
     companion object {
-        private const val TAG = "SpeedAlertPrefs"
         const val SPEED_ALERT_PREFS_NAME = "SpeedAlertPrefs"
-
-        /** Keys stored unprefixed (Dart uses [SharedPreferences.setPrefix] ''). */
-        private val MIGRATION_KEYS = arrayOf(
-            "alert_threshold_mph",
-            "audible_alert_enabled",
-            "background_alert_enabled",
-            "alert_run_mode",
-            "api_here_enabled",
-            "api_tomtom_enabled",
-            "api_mapbox_enabled",
-            "sim_dest_preset",
-            "sim_dest_preset_migrated_el_camino",
-            "sim_dest_preset_migrated_el_camino_rev",
-            "sim_custom_dest_query",
-            "sim_custom_dest_latlng",
-            "sim_routing_origin_latlng",
-            "sim_routing_dest_latlng",
-            "overlay_hud_minimized",
-            "use_remote_speed_api",
-            "use_local_speed_stabilizer",
-            "log_speed_fetches",
-            "ui_theme_mode",
-            "suppress_alerts_under_15_mph",
-        )
 
         private const val LIST_IDENTIFIER =
             "VGhpcyBpcyB0aGUgcHJlZml4IGZvciBhIGxpc3Qu"
@@ -92,60 +66,6 @@ class SpeedAlertSharedPreferencesHandler(context: Context) : Messages.SharedPref
         private const val BIG_INTEGER_PREFIX =
             "VGhpcyBpcyB0aGUgcHJlZml4IGZvciBCaWdJbnRlZ2Vy"
         private const val DOUBLE_PREFIX = "VGhpcyBpcyB0aGUgcHJlZml4IGZvciBEb3VibGUu"
-
-        private const val FLUTTER_DEFAULT_PREFS = "FlutterSharedPreferences"
-        private const val FLUTTER_KEY_PREFIX = "flutter."
-
-        /**
-         * One-time style migration: copy known keys from the Flutter plugin file into [SPEED_ALERT_PREFS_NAME]
-         * when the legacy native store has no [alert_threshold_mph] but the Flutter file does.
-         */
-        @JvmStatic
-        fun migrateFromFlutterPluginStoreIfNeeded(context: Context) {
-            val dest = context.applicationContext.getSharedPreferences(
-                SPEED_ALERT_PREFS_NAME,
-                Context.MODE_PRIVATE,
-            )
-            if (dest.contains("alert_threshold_mph")) return
-
-            val src = context.applicationContext.getSharedPreferences(
-                FLUTTER_DEFAULT_PREFS,
-                Context.MODE_PRIVATE,
-            )
-            if (!src.contains(FLUTTER_KEY_PREFIX + "alert_threshold_mph")) return
-
-            val ed = dest.edit()
-            var any = false
-            for (key in MIGRATION_KEYS) {
-                if (dest.contains(key)) continue
-                val fk = FLUTTER_KEY_PREFIX + key
-                if (!src.contains(fk)) continue
-                @Suppress("UNCHECKED_CAST")
-                when (val v = src.all[fk]) {
-                    is Boolean -> {
-                        ed.putBoolean(key, v)
-                        any = true
-                    }
-                    is String -> {
-                        ed.putString(key, v)
-                        any = true
-                    }
-                    is Long -> {
-                        ed.putLong(key, v)
-                        any = true
-                    }
-                    is Int -> {
-                        ed.putLong(key, v.toLong())
-                        any = true
-                    }
-                    else -> Log.d(TAG, "migrate: skip $key (${v?.javaClass})")
-                }
-            }
-            if (any) {
-                ed.commit()
-                Log.i(TAG, "Migrated preference keys from $FLUTTER_DEFAULT_PREFS to $SPEED_ALERT_PREFS_NAME")
-            }
-        }
     }
 
     override fun remove(key: String): Boolean = preferences.edit().remove(key).commit()

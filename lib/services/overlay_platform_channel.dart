@@ -6,7 +6,7 @@ import 'package:flutter/services.dart';
 import '../core/constants.dart';
 import 'preferences_manager.dart';
 
-/// Android system overlay HUD — native [SpeedOverlayBridge.kt].
+/// Android system overlay HUD (native code behind [channel] method calls).
 class OverlayPlatformChannel {
   OverlayPlatformChannel._();
 

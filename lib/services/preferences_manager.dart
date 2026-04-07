@@ -19,8 +19,6 @@ class PreferencesManager {
 
   static const _kAlertThreshold = 'alert_threshold_mph';
   static const _kAudibleAlert = 'audible_alert_enabled';
-  /// Legacy key — migrated once to [alertRunMode].
-  static const _kBackgroundAlert = 'background_alert_enabled';
   static const _kAlertRunMode = 'alert_run_mode';
   static const _kApiHere = 'api_here_enabled';
   static const _kApiTomTom = 'api_tomtom_enabled';
@@ -37,8 +35,6 @@ class PreferencesManager {
   static const _kFlutterDrivingTrackingActive = 'flutter_driving_tracking_active';
 
   static const _kSimDestPreset = 'sim_dest_preset';
-  static const _kSimDestPresetMigratedElCamino = 'sim_dest_preset_migrated_el_camino';
-  static const _kSimDestPresetMigratedElCaminoRev = 'sim_dest_preset_migrated_el_camino_rev';
   static const _kSimCustomDestQuery = 'sim_custom_dest_query';
   static const _kSimCustomDestLatlng = 'sim_custom_dest_latlng';
   static const _kSimRoutingOriginLatlng = 'sim_routing_origin_latlng';
@@ -48,14 +44,11 @@ class PreferencesManager {
   static const Set<String> androidNativePrefsAllowList = {
     'alert_threshold_mph',
     'audible_alert_enabled',
-    'background_alert_enabled',
     'alert_run_mode',
     'api_here_enabled',
     'api_tomtom_enabled',
     'api_mapbox_enabled',
     'sim_dest_preset',
-    'sim_dest_preset_migrated_el_camino',
-    'sim_dest_preset_migrated_el_camino_rev',
     'sim_custom_dest_query',
     'sim_custom_dest_latlng',
     'sim_routing_origin_latlng',
@@ -86,35 +79,7 @@ class PreferencesManager {
 
   static Future<PreferencesManager> open() async {
     final p = await SharedPreferences.getInstance();
-    await _runFirstLaunchPreferenceMigrations(p);
     return PreferencesManager(p);
-  }
-
-  /// First-launch migrations (sim preset indices, alert run mode).
-  static Future<void> _runFirstLaunchPreferenceMigrations(SharedPreferences p) async {
-    if (p.getBool(_kSimDestPresetMigratedElCamino) != true) {
-      final stored = p.getInt(_kSimDestPreset) ?? 0;
-      final migrated = stored == 2 ? 3 : stored;
-      await p.setInt(_kSimDestPreset, migrated.clamp(0, 3));
-      await p.setBool(_kSimDestPresetMigratedElCamino, true);
-    }
-    if (p.getBool(_kSimDestPresetMigratedElCaminoRev) != true) {
-      final stored = p.getInt(_kSimDestPreset) ?? 0;
-      if (stored == 3) {
-        await p.setInt(_kSimDestPreset, 4);
-      }
-      await p.setBool(_kSimDestPresetMigratedElCaminoRev, true);
-    }
-    if (!p.containsKey(_kAlertRunMode)) {
-      if (p.containsKey(_kBackgroundAlert)) {
-        final legacyBg = p.getBool(_kBackgroundAlert) ?? true;
-        final migrated =
-            legacyBg ? AlertRunMode.backgroundSound : AlertRunMode.normal;
-        await p.setInt(_kAlertRunMode, migrated);
-      } else {
-        await p.setInt(_kAlertRunMode, AlertRunMode.normal);
-      }
-    }
   }
 
   int get alertThresholdMph => _prefs.getInt(_kAlertThreshold) ?? 5;

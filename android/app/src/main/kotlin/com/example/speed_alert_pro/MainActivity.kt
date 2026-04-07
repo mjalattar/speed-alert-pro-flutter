@@ -16,8 +16,6 @@ class MainActivity : FlutterActivity() {
     private var speedAlertSound: SpeedAlertSoundBridge? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
-        // Run migration before Dart reads prefs (first frame / SharedPreferences.getInstance).
-        SpeedAlertSharedPreferencesHandler.migrateFromFlutterPluginStoreIfNeeded(applicationContext)
         super.configureFlutterEngine(flutterEngine)
         // After plugin registration: bind Pigeon to `SpeedAlertPrefs` XML store.
         Messages.SharedPreferencesApi.setUp(
