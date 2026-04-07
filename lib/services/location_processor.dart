@@ -270,11 +270,15 @@ class LocationProcessor {
   void _enqueueCompareSideEffectsForLocationTick(
     Position location,
     double rawMph,
-    double? userHeading,
+    double? headingForPolyline,
   ) {
-    unawaited(_maybeRequestTomTomCompareFetch(location, rawMph, userHeading));
-    unawaited(_maybeRequestMapboxCompareFetch(location, rawMph, userHeading));
-    _applyCompareRouteModelsAlongPolyline(location);
+    unawaited(
+      _maybeRequestTomTomCompareFetch(location, rawMph, headingForPolyline),
+    );
+    unawaited(
+      _maybeRequestMapboxCompareFetch(location, rawMph, headingForPolyline),
+    );
+    _applyCompareRouteModelsAlongPolyline(location, headingForPolyline);
   }
 
   /// Kotlin [LocationProcessor.processNewLocationInnerBody].
@@ -301,9 +305,12 @@ class LocationProcessor {
     );
 
     final trajBearing = _gpsTrajectoryBuffer.bearingDegreesForMatching();
+    final smoothedBearing =
+        _gpsTrajectoryBuffer.bearingDegreesSmoothedForMatching();
     final userHeading =
         AndroidLocationCompat.positionBearingIfHasBearing(location) ??
             trajBearing;
+    final headingForPolyline = smoothedBearing ?? userHeading;
 
     _maybeInvalidateForSharpHeadingChange(userHeading, rawMph, location.timestamp.millisecondsSinceEpoch);
     // Sharp-turn invalidation clears compare sustained anchors. Re-arm immediately so TomTom/Mapbox
@@ -311,20 +318,25 @@ class LocationProcessor {
     // ran during simulation when bearing jumped each route vertex).
     _updateTomTomCompareSustainedAnchor(location, rawMph);
     _updateMapboxCompareSustainedAnchor(location, rawMph);
-    _enqueueCompareSideEffectsForLocationTick(location, rawMph, userHeading);
+    _enqueueCompareSideEffectsForLocationTick(
+      location,
+      rawMph,
+      headingForPolyline,
+    );
 
     final routeModel = _hereSectionSpeedModel;
     if (routeModel != null && !routeModel.isExpired()) {
-      final proj = CrossTrackGeometry.projectOntoPolylineDetailed(
+      final proj = CrossTrackGeometry.projectOntoPolylineForMatching(
         location.latitude,
         location.longitude,
         routeModel.geometry,
+        headingForPolyline,
       );
       if (proj != null &&
           CrossTrackGeometry.isSectionWalkProjectionValid(
             proj,
             routeModel.geometry,
-            userHeading,
+            headingForPolyline,
           )) {
         final alongRaw = proj.alongMeters;
         final along = _sectionWalkAlongContinuity.clampAlong(alongRaw, location);
@@ -358,7 +370,7 @@ class LocationProcessor {
           location.latitude,
           location.longitude,
           seg,
-          userHeading,
+          headingForPolyline,
         )) {
       _applyHereResolvedLimit(
         location: location,
@@ -712,7 +724,10 @@ class LocationProcessor {
     await _enqueueMapboxCompareFetch(location, headingDeg);
   }
 
-  void _applyCompareRouteModelsAlongPolyline(Position location) {
+  void _applyCompareRouteModelsAlongPolyline(
+    Position location,
+    double? headingForPolyline,
+  ) {
     final tm = _tomtomCompareRouteModel;
     if (tm != null && !tm.isExpired()) {
       if (CrossTrackGeometry.isUserOnPolylineForAlongResolve(
@@ -721,11 +736,13 @@ class LocationProcessor {
         tm.geometry,
         maxCrossTrackM: TOMTOM_ALONG_POLYLINE_MAX_CROSS_TRACK_M,
         pastEndBufferM: TOMTOM_ALONG_POLYLINE_PAST_END_BUFFER_M,
+        userHeadingDeg: headingForPolyline,
       )) {
-        final along = CrossTrackGeometry.alongPolylineMeters(
+        final along = CrossTrackGeometry.alongPolylineMetersForMatching(
           location.latitude,
           location.longitude,
           tm.geometry,
+          headingForPolyline,
         );
         compare.publishTomTomCompareFromAlong(tm.speedLimitDataAtAlong(along));
       } else {
@@ -740,11 +757,13 @@ class LocationProcessor {
         mb.geometry,
         maxCrossTrackM: MAPBOX_ALONG_POLYLINE_MAX_CROSS_TRACK_M,
         pastEndBufferM: MAPBOX_ALONG_POLYLINE_PAST_END_BUFFER_M,
+        userHeadingDeg: headingForPolyline,
       )) {
-        final along = CrossTrackGeometry.alongPolylineMeters(
+        final along = CrossTrackGeometry.alongPolylineMetersForMatching(
           location.latitude,
           location.longitude,
           mb.geometry,
+          headingForPolyline,
         );
         compare.publishMapboxCompareFromAlong(mb.speedLimitDataAtAlong(along));
       } else {

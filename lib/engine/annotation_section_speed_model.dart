@@ -1,10 +1,17 @@
 import 'dart:convert';
+import 'dart:math' as math;
 
 import '../core/android_location_compat.dart';
+import '../core/compare_provider_constants.dart';
 import '../models/speed_limit_data.dart';
+import 'cross_track_geometry.dart';
+import 'geo_bearing.dart';
 import 'geo_coordinate.dart';
 
 const double _alongEpsM = 0.5;
+
+/// Along polyline distance (m) within which TomTom/Mapbox use [vehicleAnchorMph] (position-based, not slice tiling).
+const double _vehicleAnchorAlongMaxM = 55.0;
 
 /// Speed limits tiled along a polyline (Mapbox `annotation.maxspeed` or TomTom Snap `route[]`).
 /// Mirrors Kotlin [AnnotationSectionSpeedModel].
@@ -16,6 +23,7 @@ class AnnotationSectionSpeedModel {
     required this.totalLengthM,
     required this.expiresAtMillis,
     required this.provider,
+    this.vehicleAnchorMph,
   }) : _slices = slices;
 
   final List<GeoCoordinate> geometry;
@@ -24,13 +32,66 @@ class AnnotationSectionSpeedModel {
   final int expiresAtMillis;
   final String provider;
 
+  /// TomTom: [projectedPoints] → [route[routeIndex]]. Mapbox: [annotation.maxspeed] at projected edge on route geometry.
+  /// Independent of other providers; only encodes that vendor’s response at the vehicle.
+  final int? vehicleAnchorMph;
+
   bool isExpired([int? nowMillis]) {
     final now = nowMillis ?? DateTime.now().millisecondsSinceEpoch;
     return now >= expiresAtMillis;
   }
 
+  /// Posted limit from [MphSlice] tiling only (ignores [vehicleAnchorMph]). Used to debug anchor vs slice.
+  int? sliceOnlyMphAtAlong(double alongMeters) {
+    final along = alongMeters.clamp(0.0, totalLengthM + _alongEpsM);
+    var containing = -1;
+    for (var i = 0; i < _slices.length; i++) {
+      final sl = _slices[i];
+      if (along >= sl.fromM - _alongEpsM && along < sl.toM + _alongEpsM) {
+        containing = i;
+        break;
+      }
+    }
+    if (containing >= 0) {
+      return _slices[containing].mph;
+    }
+    if (_slices.isNotEmpty) {
+      var j = -1;
+      for (var i = 0; i < _slices.length; i++) {
+        if (_slices[i].fromM <= along + _alongEpsM) j = i;
+      }
+      return j >= 0 ? _slices[j].mph : null;
+    }
+    return null;
+  }
+
   SpeedLimitData speedLimitDataAtAlong(double alongMeters) {
     final along = alongMeters.clamp(0.0, totalLengthM + _alongEpsM);
+    final anchor = vehicleAnchorMph;
+    if (anchor != null &&
+        provider == 'TomTom' &&
+        along <= _vehicleAnchorAlongMaxM) {
+      return SpeedLimitData(
+        provider: provider,
+        speedLimitMph: anchor,
+        confidence: ConfidenceLevel.high,
+        source: 'TomTom route (vehicle snap)',
+        segmentKey: 'tomtom:vehicle_anchor',
+        functionalClass: null,
+      );
+    }
+    if (anchor != null &&
+        provider == 'Mapbox' &&
+        along <= _vehicleAnchorAlongMaxM) {
+      return SpeedLimitData(
+        provider: provider,
+        speedLimitMph: anchor,
+        confidence: ConfidenceLevel.high,
+        source: 'Mapbox route (vehicle position)',
+        segmentKey: 'mapbox:vehicle_anchor',
+        functionalClass: null,
+      );
+    }
     var containing = -1;
     for (var i = 0; i < _slices.length; i++) {
       final sl = _slices[i];
@@ -65,6 +126,9 @@ class AnnotationSectionSpeedModel {
   static AnnotationSectionSpeedModel? fromMapboxDirectionsJson(
     String jsonStr, {
     int ttlMs = 30 * 60 * 1000,
+    double? vehicleLat,
+    double? vehicleLng,
+    double? headingDegrees,
   }) {
     try {
       final root = jsonDecode(jsonStr) as Map<String, dynamic>;
@@ -102,12 +166,106 @@ class AnnotationSectionSpeedModel {
         slices.add(MphSlice(prefix[i], prefix[i + 1], lastMph));
       }
       if (slices.isEmpty) return null;
+      assert(() {
+        assert(
+          slices.length == edgeCount,
+          'Mapbox maxspeed tiling: ${slices.length} slices vs $edgeCount edges',
+        );
+        return true;
+      }());
+      final vehicleAnchor = (vehicleLat != null &&
+              vehicleLng != null &&
+              vehicleLat.isFinite &&
+              vehicleLng.isFinite)
+          ? _mapboxVehicleMphAtGeometry(geo, arr, vehicleLat, vehicleLng, headingDegrees)
+          : null;
       return AnnotationSectionSpeedModel._(
         geometry: geo,
         slices: slices,
         totalLengthM: total,
         expiresAtMillis: DateTime.now().millisecondsSinceEpoch + ttlMs,
         provider: 'Mapbox',
+        vehicleAnchorMph: vehicleAnchor,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// [annotation.maxspeed] entry for the edge containing the vehicle (project onto Mapbox route geometry only).
+  static int? _mapboxVehicleMphAtGeometry(
+    List<GeoCoordinate> geo,
+    List<dynamic> maxspeedArr,
+    double vehicleLat,
+    double vehicleLng,
+    double? headingDegrees,
+  ) {
+    final e = _mapboxVehicleEdgeProjectionFromGeometry(
+      geo,
+      maxspeedArr,
+      vehicleLat,
+      vehicleLng,
+      headingDegrees,
+    );
+    return e?.edgeMph;
+  }
+
+  static MapboxVehicleEdgeProjection? _mapboxVehicleEdgeProjectionFromGeometry(
+    List<GeoCoordinate> geo,
+    List<dynamic> maxspeedArr,
+    double vehicleLat,
+    double vehicleLng,
+    double? headingDegrees,
+  ) {
+    if (geo.length < 2 || maxspeedArr.isEmpty) return null;
+    final proj = CrossTrackGeometry.projectOntoPolylineForMatching(
+      vehicleLat,
+      vehicleLng,
+      geo,
+      headingDegrees,
+    );
+    final seg = proj?.segmentIndex ?? 0;
+    final lastSeg = geo.length - 2;
+    final lastMs = maxspeedArr.length - 1;
+    final cap = math.min(lastSeg, lastMs).toInt();
+    final edgeIdx = seg.clamp(0, cap);
+    final mph = _parseMapboxMaxspeedEntry(maxspeedArr, edgeIdx);
+    return MapboxVehicleEdgeProjection(edgeIndex: edgeIdx, edgeMph: mph);
+  }
+
+  /// Debug: edge index + maxspeed at projected vehicle position on Mapbox directions geometry.
+  static MapboxVehicleEdgeProjection? mapboxVehicleEdgeProjectionFromDirectionsJson(
+    String jsonStr,
+    double vehicleLat,
+    double vehicleLng,
+    double? headingDegrees,
+  ) {
+    try {
+      final root = jsonDecode(jsonStr) as Map<String, dynamic>;
+      final routes = root['routes'] as List<dynamic>?;
+      final route = routes?.isNotEmpty == true ? routes!.first as Map<String, dynamic> : null;
+      if (route == null) return null;
+      final geom = route['geometry'] as Map<String, dynamic>?;
+      final coords = geom?['coordinates'] as List<dynamic>?;
+      final legs = route['legs'] as List<dynamic>?;
+      final leg = legs?.isNotEmpty == true ? legs!.first as Map<String, dynamic> : null;
+      final annotation = leg?['annotation'] as Map<String, dynamic>?;
+      final arr = annotation?['maxspeed'] as List<dynamic>?;
+      final n = coords?.length ?? 0;
+      if (coords == null || n < 2 || arr == null) return null;
+      final geo = <GeoCoordinate>[];
+      for (var i = 0; i < n; i++) {
+        final p = coords[i] as List<dynamic>;
+        final lon = (p[0] as num).toDouble();
+        final la = (p[1] as num).toDouble();
+        geo.add(GeoCoordinate(la, lon));
+      }
+      return _mapboxVehicleEdgeProjectionFromGeometry(
+        geo,
+        arr,
+        vehicleLat,
+        vehicleLng,
+        headingDegrees,
       );
     } catch (_) {
       return null;
@@ -117,12 +275,27 @@ class AnnotationSectionSpeedModel {
   static AnnotationSectionSpeedModel? fromTomTomSnapRouteJson(
     String jsonStr, {
     int ttlMs = 30 * 60 * 1000,
+    double? vehicleLat,
+    double? vehicleLng,
+    double? headingDegrees,
   }) {
     try {
       final root = jsonDecode(jsonStr) as Map<String, dynamic>;
       if (root['detailedError'] != null) return null;
       final route = _tomTomRouteElementsArray(root);
       if (route == null || route.isEmpty) return null;
+      final vehicleAnchor = (vehicleLat != null &&
+              vehicleLng != null &&
+              vehicleLat.isFinite &&
+              vehicleLng.isFinite)
+          ? _tomTomVehicleSpeedMphFromSnapRoot(
+              root,
+              route,
+              vehicleLat,
+              vehicleLng,
+              headingDegrees,
+            )
+          : null;
       final routeLen = route.length;
       final bounds = _tomTomRouteFeatureBoundsFromProjectedPoints(root, routeLen);
       var minI = bounds.$1;
@@ -135,11 +308,167 @@ class AnnotationSectionSpeedModel {
         minI = padded.$1;
         maxI = padded.$2;
       }
-      return _buildTomTomSnapSectionModel(route, minI, maxI, ttlMs) ??
-          _buildTomTomSnapSectionModel(route, 0, routeLen - 1, ttlMs);
+      final built = _buildTomTomSnapSectionModel(route, minI, maxI, ttlMs, vehicleAnchor) ??
+          _buildTomTomSnapSectionModel(route, 0, routeLen - 1, ttlMs, vehicleAnchor);
+      return built;
     } catch (_) {
       return null;
     }
+  }
+
+  /// Resolves posted speed at the **vehicle** using TomTom [projectedPoints] → [route[routeIndex]].properties
+  /// (not the merged polyline slice at [along], which can disagree when TomTom’s spine diverges).
+  static int? _tomTomVehicleSpeedMphFromSnapRoot(
+    Map<String, dynamic> root,
+    List<dynamic> route,
+    double vehicleLat,
+    double vehicleLng,
+    double? headingDegrees,
+  ) {
+    final p = _tomTomVehicleProjectionFromSnapRoot(
+      root,
+      route,
+      vehicleLat,
+      vehicleLng,
+      headingDegrees,
+    );
+    return p?.anchorMph;
+  }
+
+  /// Debug: best [projectedPoints] match → speed, route feature index, snapped coordinates.
+  static TomTomSnapVehicleProjection? tomTomVehicleProjectionFromSnapJson(
+    String jsonStr,
+    double vehicleLat,
+    double vehicleLng, {
+    double? headingDegrees,
+  }) {
+    try {
+      final root = jsonDecode(jsonStr) as Map<String, dynamic>;
+      if (root['detailedError'] != null) return null;
+      final route = _tomTomRouteElementsArray(root);
+      if (route == null || route.isEmpty) return null;
+      return _tomTomVehicleProjectionFromSnapRoot(
+        root,
+        route,
+        vehicleLat,
+        vehicleLng,
+        headingDegrees,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Bearing (deg) along the first edge of TomTom route feature [routeIndex].
+  static double? _tomTomFirstSegmentBearingDeg(List<dynamic> route, int routeIndex) {
+    if (routeIndex < 0 || routeIndex >= route.length) return null;
+    final feat = route[routeIndex] as Map<String, dynamic>?;
+    final rawGeom = feat?['geometry'];
+    if (rawGeom is! Map<String, dynamic>) return null;
+    final coords = _tomTomLineStringCoordinates(rawGeom);
+    if (coords == null || coords.length < 2) return null;
+    final p0 = coords[0] as List<dynamic>;
+    final p1 = coords[1] as List<dynamic>;
+    final lon0 = (p0[0] as num).toDouble();
+    final la0 = (p0[1] as num).toDouble();
+    final lon1 = (p1[0] as num).toDouble();
+    final la1 = (p1[1] as num).toDouble();
+    return bearingDeg(la0, lon0, la1, lon1);
+  }
+
+  static TomTomSnapVehicleProjection? _tomTomVehicleProjectionFromSnapRoot(
+    Map<String, dynamic> root,
+    List<dynamic> route,
+    double vehicleLat,
+    double vehicleLng,
+    double? headingDegrees,
+  ) {
+    final projected = root['projectedPoints'] as List<dynamic>?;
+    if (projected == null || projected.isEmpty) {
+      final feat0 = route.isNotEmpty ? route[0] as Map<String, dynamic>? : null;
+      final props0 = feat0?['properties'] as Map<String, dynamic>? ?? {};
+      final m = _mphFromTomTomRoadProperties(props0);
+      if (m == null) return null;
+      return TomTomSnapVehicleProjection(
+        anchorMph: m,
+        routeIndex: 0,
+        snapLat: vehicleLat,
+        snapLng: vehicleLng,
+        snapDistanceM: 0,
+      );
+    }
+    final candidates = <({TomTomSnapVehicleProjection p, double d})>[];
+    for (final raw in projected) {
+      final pf = raw as Map<String, dynamic>?;
+      if (pf == null) continue;
+      final pprops = pf['properties'] as Map<String, dynamic>? ?? {};
+      final snap = pprops['snapResult']?.toString().trim() ?? '';
+      if (!_tomTomSnapResultForRouteBounds(snap)) continue;
+      final ri = _tomTomRouteIndexFromProperties(pprops);
+      if (ri < 0 || ri >= route.length) continue;
+      final geom = pf['geometry'] as Map<String, dynamic>?;
+      if (geom == null) continue;
+      final coords = geom['coordinates'];
+      if (coords is! List || coords.length < 2) continue;
+      final lon = (coords[0] as num).toDouble();
+      final la = (coords[1] as num).toDouble();
+      final d = AndroidLocationCompat.distanceBetweenMeters(
+        vehicleLat,
+        vehicleLng,
+        la,
+        lon,
+      );
+      final feat = route[ri] as Map<String, dynamic>?;
+      final props = feat?['properties'] as Map<String, dynamic>? ?? {};
+      final mph = _mphFromTomTomRoadProperties(props);
+      if (mph == null) continue;
+      candidates.add((
+        p: TomTomSnapVehicleProjection(
+          anchorMph: mph,
+          routeIndex: ri,
+          snapLat: la,
+          snapLng: lon,
+          snapDistanceM: d,
+        ),
+        d: d,
+      ));
+    }
+    if (candidates.isEmpty) return null;
+    candidates.sort((a, b) => a.d.compareTo(b.d));
+    final minD = candidates.first.d;
+    if (headingDegrees != null &&
+        headingDegrees.isFinite &&
+        candidates.length > 1) {
+      final near = candidates
+          .where(
+            (c) =>
+                c.d <=
+                minD + CompareProviderConstants.tomtomProjectedPointHeadingTieM,
+          )
+          .toList();
+      if (near.length > 1) {
+        var bestScore = double.infinity;
+        TomTomSnapVehicleProjection? bestHeadingPick;
+        for (final c in near) {
+          final brg = _tomTomFirstSegmentBearingDeg(route, c.p.routeIndex);
+          if (brg == null) {
+            if (c.d < bestScore) {
+              bestScore = c.d;
+              bestHeadingPick = c.p;
+            }
+            continue;
+          }
+          final delta = smallestBearingDeltaDeg(headingDegrees, brg);
+          final score = c.d + delta * 0.35;
+          if (score < bestScore) {
+            bestScore = score;
+            bestHeadingPick = c.p;
+          }
+        }
+        if (bestHeadingPick != null) return bestHeadingPick;
+      }
+    }
+    return candidates.first.p;
   }
 
   static AnnotationSectionSpeedModel? _buildTomTomSnapSectionModel(
@@ -147,6 +476,7 @@ class AnnotationSectionSpeedModel {
     int startFi,
     int endFi,
     int ttlMs,
+    int? vehicleAnchorMph,
   ) {
     final merged = <GeoCoordinate>[];
     final slices = <MphSlice>[];
@@ -210,6 +540,7 @@ class AnnotationSectionSpeedModel {
       totalLengthM: total,
       expiresAtMillis: DateTime.now().millisecondsSinceEpoch + ttlMs,
       provider: 'TomTom',
+      vehicleAnchorMph: vehicleAnchorMph,
     );
   }
 
@@ -388,4 +719,32 @@ class MphSlice {
   final double fromM;
   final double toM;
   final int? mph;
+}
+
+/// TomTom Snap API: vehicle anchor from [projectedPoints] → [route[routeIndex]] (debug / logging).
+class TomTomSnapVehicleProjection {
+  const TomTomSnapVehicleProjection({
+    required this.anchorMph,
+    required this.routeIndex,
+    required this.snapLat,
+    required this.snapLng,
+    required this.snapDistanceM,
+  });
+
+  final int anchorMph;
+  final int routeIndex;
+  final double snapLat;
+  final double snapLng;
+  final double snapDistanceM;
+}
+
+/// Mapbox Directions: `annotation.maxspeed` edge at projected vehicle position (debug / logging).
+class MapboxVehicleEdgeProjection {
+  const MapboxVehicleEdgeProjection({
+    required this.edgeIndex,
+    required this.edgeMph,
+  });
+
+  final int edgeIndex;
+  final int? edgeMph;
 }

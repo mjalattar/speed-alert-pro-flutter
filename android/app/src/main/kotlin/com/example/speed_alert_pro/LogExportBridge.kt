@@ -14,7 +14,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-/** Kotlin parity: export unified CSV / span TXT to [MediaStore.Downloads] (API 29+). */
+/** Kotlin parity: export unified CSV / HERE span CSV / TomTom–Mapbox HTTP CSV to [MediaStore.Downloads] (API 29+). */
 class LogExportBridge(
     private val context: Context,
     engine: FlutterEngine,
@@ -42,7 +42,7 @@ class LogExportBridge(
                     val uri = copyFileToDownloads(File(path), name, "text/csv")
                     result.success(if (uri != null) name else null)
                 }
-                "copySpanSessionTxtToDownloads" -> {
+                "copySpanSessionCsvToDownloads" -> {
                     val content = call.argument<String>("content")
                     val session = call.argument<String>("session")
                     if (content == null || session == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
@@ -50,8 +50,28 @@ class LogExportBridge(
                         return@setMethodCallHandler
                     }
                     val name =
-                        "SpeedAlertPro_here_spans_${session.lowercase(Locale.US)}_${stamp()}.txt"
-                    val uri = copyBytesToDownloads(content.toByteArray(Charsets.UTF_8), name, "text/plain")
+                        "SpeedAlertPro_here_spans_${session.lowercase(Locale.US)}_${stamp()}.csv"
+                    val uri = copyBytesToDownloads(content.toByteArray(Charsets.UTF_8), name, "text/csv")
+                    result.success(if (uri != null) name else null)
+                }
+                "copyProviderHttpSessionCsvToDownloads" -> {
+                    val content = call.argument<String>("content")
+                    val session = call.argument<String>("session")
+                    val provider = call.argument<String>("provider")
+                    if (content == null || session == null || provider == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+                        result.success(null)
+                        return@setMethodCallHandler
+                    }
+                    val tag = when (provider) {
+                        "TOMTOM" -> "tomtom_http"
+                        "MAPBOX" -> "mapbox_http"
+                        else -> {
+                            result.success(null)
+                            return@setMethodCallHandler
+                        }
+                    }
+                    val name = "SpeedAlertPro_${tag}_${session.lowercase(Locale.US)}_${stamp()}.csv"
+                    val uri = copyBytesToDownloads(content.toByteArray(Charsets.UTF_8), name, "text/csv")
                     result.success(if (uri != null) name else null)
                 }
                 else -> result.notImplemented()

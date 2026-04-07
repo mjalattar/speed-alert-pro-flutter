@@ -32,21 +32,46 @@ class LogExportPlatform {
     }
   }
 
-  /// Kotlin [HereSpanFetchSessionLogger] text export to Downloads (Android Q+).
-  static Future<String?> copySpanSessionTxtToDownloads({
+  /// HERE span session export as CSV to Downloads (Android Q+).
+  static Future<String?> copySpanSessionCsvToDownloads({
     required String content,
     required SpeedDebugLogSession session,
   }) async {
     if (kIsWeb) return null;
     if (defaultTargetPlatform != TargetPlatform.android) return null;
     try {
-      return await _ch.invokeMethod<String>('copySpanSessionTxtToDownloads', <String, dynamic>{
+      return await _ch.invokeMethod<String>('copySpanSessionCsvToDownloads', <String, dynamic>{
         'content': content,
         'session': switch (session) {
           SpeedDebugLogSession.simulation => 'SIMULATION',
           SpeedDebugLogSession.driving => 'DRIVING',
           SpeedDebugLogSession.none => 'NONE',
         },
+      });
+    } on MissingPluginException {
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// TomTom / Mapbox HTTP-only session CSV to Downloads (Android Q+).
+  static Future<String?> copyProviderHttpSessionCsvToDownloads({
+    required String content,
+    required SpeedDebugLogSession session,
+    required String provider,
+  }) async {
+    if (kIsWeb) return null;
+    if (defaultTargetPlatform != TargetPlatform.android) return null;
+    try {
+      return await _ch.invokeMethod<String>('copyProviderHttpSessionCsvToDownloads', <String, dynamic>{
+        'content': content,
+        'session': switch (session) {
+          SpeedDebugLogSession.simulation => 'SIMULATION',
+          SpeedDebugLogSession.driving => 'DRIVING',
+          SpeedDebugLogSession.none => 'NONE',
+        },
+        'provider': provider,
       });
     } on MissingPluginException {
       return null;

@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import '../config/app_config.dart';
+import '../engine/annotation_section_speed_model.dart';
 import '../models/speed_limit_data.dart';
 import '../services/preferences_manager.dart';
 import 'csv_formatting.dart';
@@ -28,7 +29,7 @@ class SpeedLimitApiRequestLogger {
       'meters_since_prior_fetch_trigger,ms_since_prior_fetch_trigger,gps_trace_point_count,'
       'request_reason_human,road_functional_class,odometer_meters,'
       'build_use_remote_here,prefs_use_remote_speed_api,prefs_here_enabled,prefs_local_stabilizer,'
-      'here_alert_path,fetch_generation,app_session_id\n';
+      'here_alert_path,fetch_generation,app_session_id,compare_fetch_diag\n';
 
   static String utcNow() => SpeedFetchDebugLoggerUtc.utcNow();
 
@@ -126,6 +127,7 @@ class SpeedLimitApiRequestLogger {
       msSinceFetch: '',
       gpsTracePoints: '',
       fetchGeneration: '',
+      compareFetchDiag: '',
     );
   }
 
@@ -244,6 +246,94 @@ class SpeedLimitApiRequestLogger {
       msSinceFetch: msSincePriorFetch?.toString() ?? '',
       gpsTracePoints: gpsTracePointCount?.toString() ?? '',
       fetchGeneration: fetchGeneration?.toString() ?? '',
+      compareFetchDiag: '',
+    );
+  }
+
+  /// One row per TomTom or Mapbox compare HTTP response: anchor vs slice, snap/edge projection, lead waypoint.
+  static Future<void> appendCompareFetchDiagnostics({
+    required PreferencesManager preferencesManager,
+    required String provider,
+    required double vehicleLat,
+    required double vehicleLng,
+    double? bearingDeg,
+    required double alongMeters,
+    required String leadDestLatLng,
+    required int? reportedMph,
+    required int? sliceMph,
+    TomTomSnapVehicleProjection? tomTomProjection,
+    MapboxVehicleEdgeProjection? mapboxEdge,
+  }) async {
+    if (!isLoggingEnabled(preferencesManager)) return;
+    if (!SpeedDebugLogSessionHolder.isSessionActive()) return;
+    final snap = await SpeedLimitLoggingContext.snapshotAsync();
+    final bearStr =
+        bearingDeg != null && bearingDeg.isFinite ? bearingDeg.toStringAsFixed(1) : '';
+    final rowSnap = LoggingSnapshot(
+      hasFix: true,
+      lat: vehicleLat,
+      lng: vehicleLng,
+      bearingDeg: bearStr,
+      speedMps: snap.speedMps,
+      horizontalAccuracyM: snap.horizontalAccuracyM,
+      altitudeM: snap.altitudeM,
+      verticalAccuracyM: snap.verticalAccuracyM,
+      provider: snap.provider,
+      fixAgeMs: snap.fixAgeMs,
+      roadFunctionalClass: snap.roadFunctionalClass,
+      odometerMeters: snap.odometerMeters,
+    );
+    final buf = StringBuffer(provider)
+      ..write('|along_m=${alongMeters.toStringAsFixed(1)}')
+      ..write('|lead=$leadDestLatLng')
+      ..write('|reported_mph=${reportedMph ?? ''}')
+      ..write('|slice_mph=${sliceMph ?? ''}');
+    if (tomTomProjection != null) {
+      buf
+        ..write('|snap_ri=${tomTomProjection.routeIndex}')
+        ..write('|snap_lat=${tomTomProjection.snapLat.toStringAsFixed(7)}')
+        ..write('|snap_lng=${tomTomProjection.snapLng.toStringAsFixed(7)}')
+        ..write('|snap_dist_m=${tomTomProjection.snapDistanceM.toStringAsFixed(1)}');
+    }
+    if (mapboxEdge != null) {
+      buf
+        ..write('|edge_idx=${mapboxEdge.edgeIndex}')
+        ..write('|edge_mph=${mapboxEdge.edgeMph ?? ''}');
+    }
+    _writeRow(
+      preferencesManager: preferencesManager,
+      utc: utcNow(),
+      eventType: 'compare_fetch_diag',
+      category: 'compare_providers',
+      method: '',
+      urlRedacted: '',
+      httpCode: -1,
+      note: 'Compare provider fetch diagnostics (see compare_fetch_diag column).',
+      requestReasonHuman:
+          'TomTom/Mapbox: along-polyline slice vs vehicle anchor; snap/edge indices; lead waypoint.',
+      snap: rowSnap,
+      vehicleSpeedMph: '',
+      rawMph: '',
+      displayMph: '',
+      hereCompareMph: SpeedLimitLoggingContext.hereCompareMphForCsv(),
+      stabilized: '',
+      sourceTag: 'compare_fetch_diag',
+      segmentKey: '',
+      tomtomMph: SpeedLimitLoggingContext.compareTomTomMphForCsv(),
+      mapboxMph: SpeedLimitLoggingContext.compareMapboxMphForCsv(),
+      hereReqUtc: '',
+      hereResUtc: '',
+      hereSrc: '',
+      hereConf: '',
+      hereFc: '',
+      hereZones: '',
+      hereRouteLen: '',
+      hereErr: '',
+      metersSinceFetch: '',
+      msSinceFetch: '',
+      gpsTracePoints: '',
+      fetchGeneration: '',
+      compareFetchDiag: buf.toString(),
     );
   }
 
@@ -313,6 +403,7 @@ class SpeedLimitApiRequestLogger {
       msSinceFetch: '',
       gpsTracePoints: '',
       fetchGeneration: '',
+      compareFetchDiag: '',
     );
   }
 
@@ -384,6 +475,7 @@ class SpeedLimitApiRequestLogger {
       msSinceFetch: '',
       gpsTracePoints: '',
       fetchGeneration: '',
+      compareFetchDiag: '',
     );
   }
 
@@ -419,6 +511,7 @@ class SpeedLimitApiRequestLogger {
     required String msSinceFetch,
     required String gpsTracePoints,
     required String fetchGeneration,
+    String compareFetchDiag = '',
   }) {
     if (!SpeedDebugLogSessionHolder.isSessionActive()) return;
     final session = SpeedDebugLogSessionHolder.activeSession();
@@ -470,7 +563,8 @@ class SpeedLimitApiRequestLogger {
       ..write('${preferencesManager.useLocalSpeedStabilizer ? '1' : '0'},')
       ..write('${CsvFormatting.escape(SpeedLimitLoggingContext.hereAlertPathForCsv())},')
       ..write('${CsvFormatting.escape(fetchGeneration)},')
-      ..write('${CsvFormatting.escape(SpeedLimitLoggingContext.appSessionId)}\n');
+      ..write('${CsvFormatting.escape(SpeedLimitLoggingContext.appSessionId)},')
+      ..write('${CsvFormatting.escape(compareFetchDiag)}\n');
     final file = SpeedAlertLogFilesystem.sessionLogFile(session);
     final needHeader = !file.existsSync() || file.lengthSync() == 0;
     final raf = file.openSync(mode: FileMode.append);

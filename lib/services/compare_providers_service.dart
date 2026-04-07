@@ -5,6 +5,7 @@ import 'dart:async';
 import 'dart:developer' as developer;
 
 import '../config/app_config.dart';
+import '../core/compare_provider_constants.dart';
 import '../core/android_location_compat.dart';
 import '../logging/speed_limit_api_request_logger.dart';
 import '../logging/speed_limit_http_log_interceptor.dart';
@@ -181,16 +182,33 @@ class CompareProvidersService {
         speedMpsForSnapTiming,
       );
       final model = routeJson != null
-          ? AnnotationSectionSpeedModel.fromTomTomSnapRouteJson(routeJson)
+          ? AnnotationSectionSpeedModel.fromTomTomSnapRouteJson(
+              routeJson,
+              vehicleLat: latitude,
+              vehicleLng: longitude,
+              headingDegrees: headingDegrees,
+            )
           : null;
       if (model != null) {
-        final along = CrossTrackGeometry.alongPolylineMeters(
+        final along = CrossTrackGeometry.alongPolylineMetersForMatching(
           latitude,
           longitude,
           model.geometry,
+          headingDegrees,
         );
         final data = model.speedLimitDataAtAlong(along);
         _recordTomTomCompare(data);
+        if (routeJson != null) {
+          _maybeLogCompareFetchTomTom(
+            routeJson: routeJson,
+            latitude: latitude,
+            longitude: longitude,
+            headingDegrees: headingDegrees,
+            along: along,
+            data: data,
+            model: model,
+          );
+        }
         return CompareRouteFetchOutcome(data, model);
       }
       const data = SpeedLimitData(
@@ -244,16 +262,33 @@ class CompareProvidersService {
         token,
       );
       final model = routeJson != null
-          ? AnnotationSectionSpeedModel.fromMapboxDirectionsJson(routeJson)
+          ? AnnotationSectionSpeedModel.fromMapboxDirectionsJson(
+              routeJson,
+              vehicleLat: latitude,
+              vehicleLng: longitude,
+              headingDegrees: headingDegrees,
+            )
           : null;
       if (model != null) {
-        final along = CrossTrackGeometry.alongPolylineMeters(
+        final along = CrossTrackGeometry.alongPolylineMetersForMatching(
           latitude,
           longitude,
           model.geometry,
+          headingDegrees,
         );
         final data = model.speedLimitDataAtAlong(along);
         _recordMapboxCompare(data);
+        if (routeJson != null) {
+          _maybeLogCompareFetchMapbox(
+            routeJson: routeJson,
+            latitude: latitude,
+            longitude: longitude,
+            headingDegrees: headingDegrees,
+            along: along,
+            data: data,
+            model: model,
+          );
+        }
         return CompareRouteFetchOutcome(data, model);
       }
       const data = SpeedLimitData(
@@ -289,8 +324,88 @@ class CompareProvidersService {
     );
   }
 
-  /// Same as Kotlin [SpeedLimitAggregator.hereAlertDestination].
-  static String _hereAlertDestination(
+  /// Same as [_compareRouteLeadDestination] without explicit O/D — for debug CSV (lead waypoint).
+  static String compareRouteLeadDestinationForLog(
+    double lat,
+    double lng,
+    double? headingDegrees,
+  ) =>
+      _compareRouteLeadDestination(lat, lng, null, null, headingDegrees);
+
+  void _maybeLogCompareFetchTomTom({
+    required String routeJson,
+    required double latitude,
+    required double longitude,
+    required double? headingDegrees,
+    required double along,
+    required SpeedLimitData data,
+    required AnnotationSectionSpeedModel model,
+  }) {
+    if (!SpeedLimitApiRequestLogger.isLoggingEnabled(preferencesManager)) return;
+    final lead = compareRouteLeadDestinationForLog(latitude, longitude, headingDegrees);
+    final slice = model.sliceOnlyMphAtAlong(along);
+    final proj =
+        AnnotationSectionSpeedModel.tomTomVehicleProjectionFromSnapJson(
+          routeJson,
+          latitude,
+          longitude,
+          headingDegrees: headingDegrees,
+        );
+    unawaited(
+      SpeedLimitApiRequestLogger.appendCompareFetchDiagnostics(
+        preferencesManager: preferencesManager,
+        provider: 'TomTom',
+        vehicleLat: latitude,
+        vehicleLng: longitude,
+        bearingDeg: headingDegrees,
+        alongMeters: along,
+        leadDestLatLng: lead,
+        reportedMph: data.speedLimitMph,
+        sliceMph: slice,
+        tomTomProjection: proj,
+        mapboxEdge: null,
+      ),
+    );
+  }
+
+  void _maybeLogCompareFetchMapbox({
+    required String routeJson,
+    required double latitude,
+    required double longitude,
+    required double? headingDegrees,
+    required double along,
+    required SpeedLimitData data,
+    required AnnotationSectionSpeedModel model,
+  }) {
+    if (!SpeedLimitApiRequestLogger.isLoggingEnabled(preferencesManager)) return;
+    final lead = compareRouteLeadDestinationForLog(latitude, longitude, headingDegrees);
+    final slice = model.sliceOnlyMphAtAlong(along);
+    final edge = AnnotationSectionSpeedModel.mapboxVehicleEdgeProjectionFromDirectionsJson(
+      routeJson,
+      latitude,
+      longitude,
+      headingDegrees,
+    );
+    unawaited(
+      SpeedLimitApiRequestLogger.appendCompareFetchDiagnostics(
+        preferencesManager: preferencesManager,
+        provider: 'Mapbox',
+        vehicleLat: latitude,
+        vehicleLng: longitude,
+        bearingDeg: headingDegrees,
+        alongMeters: along,
+        leadDestLatLng: lead,
+        reportedMph: data.speedLimitMph,
+        sliceMph: slice,
+        tomTomProjection: null,
+        mapboxEdge: edge,
+      ),
+    );
+  }
+
+  /// Second waypoint for Mapbox/TomTom Directions/Snap legs (~[kAlertRouteLeadMeters] along heading).
+  /// Local geometry only — does **not** call HERE or TomTom; same convention as Kotlin alert lead.
+  static String _compareRouteLeadDestination(
     double lat,
     double lng,
     double? destLat,
@@ -345,7 +460,7 @@ class CompareProvidersService {
     int? locationFixTimeUtcMs,
     double? speedMpsForSnapTiming,
   ) async {
-    final destStr = _hereAlertDestination(lat, lng, null, null, headingDegrees);
+    final destStr = _compareRouteLeadDestination(lat, lng, null, null, headingDegrees);
     final parts = destStr.split(',');
     if (parts.length != 2) return null;
     final dlat = double.tryParse(parts[0].trim());
@@ -384,6 +499,8 @@ class CompareProvidersService {
       'fields': _snapFieldsRouteGeometrySpeed,
       'vehicleType': 'PassengerCar',
       'measurementSystem': 'auto',
+      'offroadMargin':
+          '${CompareProviderConstants.tomtomSnapOffroadMarginM}',
     });
     try {
       final res = await SpeedLimitHttpLogInterceptor.get(
@@ -412,7 +529,7 @@ class CompareProvidersService {
     double? headingDegrees,
     String token,
   ) async {
-    final destStr = _hereAlertDestination(lat, lng, null, null, headingDegrees);
+    final destStr = _compareRouteLeadDestination(lat, lng, null, null, headingDegrees);
     final parts = destStr.split(',');
     if (parts.length != 2) return null;
     final dlat = double.tryParse(parts[0].trim());
@@ -424,6 +541,7 @@ class CompareProvidersService {
     final q = <String, String>{
       'access_token': token,
       'radiuses': br.$2,
+      'alternatives': 'false',
     };
     if (br.$1 != null) q['bearings'] = br.$1!;
     // Retrofit [MapboxApiService]: @Query on URL; @Field defaults on body (encoded=true for coordinates).
@@ -469,17 +587,15 @@ class CompareProvidersService {
   static String _formatMapboxCoord(double lon, double la) =>
       '${lon.toStringAsFixed(6)},${la.toStringAsFixed(6)}';
 
-  static const int _mapboxWaypointRadiusM = 50;
-  static const int _mapboxBearingToleranceDeg = 45;
-
   static (String?, String) _mapboxBearingsAndRadiuses(double? headingDegrees) {
-    const radiuses = '$_mapboxWaypointRadiusM;$_mapboxWaypointRadiusM';
+    final r = CompareProviderConstants.mapboxWaypointRadiusM;
+    final radiuses = '$r;$r';
     if (headingDegrees == null || !headingDegrees.isFinite) {
       return (null, radiuses);
     }
     final norm = ((headingDegrees.round() % 360) + 360) % 360;
-    final b =
-        '$norm,$_mapboxBearingToleranceDeg;$norm,$_mapboxBearingToleranceDeg';
+    final tol = CompareProviderConstants.mapboxBearingToleranceDeg;
+    final b = '$norm,$tol;$norm,$tol';
     return (b, radiuses);
   }
 

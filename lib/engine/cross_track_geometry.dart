@@ -7,10 +7,17 @@ import 'geo_coordinate.dart';
 
 /// Mirrors Kotlin [CrossTrackGeometry].
 // VERIFIED: 1:1 Logic match with Kotlin ([Location.distanceTo] via [AndroidLocationCompat]).
+///
+/// [projectOntoPolylineForMatching] / [alongPolylineMetersForMatching] extend parity with
+/// **heading-weighted** segment choice when [userHeadingDeg] is set — reduces wrong-span picks on
+/// parallel roads / forks without HERE Route Matching API.
 class CrossTrackGeometry {
   CrossTrackGeometry._();
 
   static const earthMPerDegLat = 111320.0;
+
+  /// Extra effective meters added when motion heading disagrees with segment bearing (capped).
+  static const double _headingMismatchPenaltyMaxM = 55.0;
 
   static double polylineLengthMeters(List<GeoCoordinate> geometry) {
     if (geometry.length < 2) return 0;
@@ -113,10 +120,26 @@ class CrossTrackGeometry {
     double userLat,
     double userLng,
     List<GeoCoordinate> geometry,
+  ) =>
+      projectOntoPolylineForMatching(userLat, userLng, geometry, null);
+
+  /// Closest projection with optional **heading-weighted** segment choice: minimizes
+  /// cross-track distance plus penalty for heading vs segment bearing mismatch.
+  ///
+  /// When [userHeadingDeg] is null or not finite, behavior matches pure closest-point
+  /// [projectOntoPolylineDetailed] (distance-only).
+  static PolylineProjection? projectOntoPolylineForMatching(
+    double userLat,
+    double userLng,
+    List<GeoCoordinate> geometry,
+    double? userHeadingDeg,
   ) {
     if (geometry.length < 2) return null;
+    final useHeading =
+        userHeadingDeg != null && userHeadingDeg.isFinite;
     var bestAlong = 0.0;
-    var bestLat = double.infinity;
+    var bestCross = double.infinity;
+    var bestScore = double.infinity;
     var bestSeg = 0;
     var cum = 0.0;
     for (var i = 0; i < geometry.length - 1; i++) {
@@ -135,8 +158,21 @@ class CrossTrackGeometry {
         userLat, userLng, cLat, cLng,
       );
       final along = cum + t * segLen;
-      if (latDist < bestLat) {
-        bestLat = latDist;
+      final brg = bearingDeg(a.lat, a.lng, b.lat, b.lng);
+      double score;
+      if (useHeading) {
+        final delta =
+            smallestBearingDeltaDeg(userHeadingDeg!, brg).clamp(0.0, 180.0);
+        final penalty =
+            (delta / 90.0).clamp(0.0, 1.75) * _headingMismatchPenaltyMaxM;
+        score = latDist + penalty;
+      } else {
+        score = latDist;
+      }
+      if (score < bestScore - 1e-6 ||
+          (score - bestScore).abs() <= 1e-6 && latDist < bestCross) {
+        bestScore = score;
+        bestCross = latDist;
         bestAlong = along;
         bestSeg = i;
       }
@@ -147,10 +183,27 @@ class CrossTrackGeometry {
     final brg = bearingDeg(a.lat, a.lng, b.lat, b.lng);
     return PolylineProjection(
       alongMeters: bestAlong,
-      crossTrackMeters: bestLat,
+      crossTrackMeters: bestCross,
       segmentIndex: bestSeg,
       segmentBearingDeg: brg,
     );
+  }
+
+  /// Along-arc length for speed-limit resolution; uses [projectOntoPolylineForMatching] when
+  /// [userHeadingDeg] is available.
+  static double alongPolylineMetersForMatching(
+    double userLat,
+    double userLng,
+    List<GeoCoordinate> geometry,
+    double? userHeadingDeg,
+  ) {
+    final p = projectOntoPolylineForMatching(
+      userLat,
+      userLng,
+      geometry,
+      userHeadingDeg,
+    );
+    return p?.alongMeters ?? alongPolylineMeters(userLat, userLng, geometry);
   }
 
   static bool isSectionWalkProjectionValid(
@@ -193,7 +246,14 @@ class CrossTrackGeometry {
     }
     final total = polylineLengthMeters(geom);
     if (total < 5.0) return true;
-    final along = alongPolylineMeters(userLat, userLng, geom);
+    final along = userHeadingDeg != null && userHeadingDeg.isFinite
+        ? alongPolylineMetersForMatching(
+            userLat,
+            userLng,
+            geom,
+            userHeadingDeg,
+          )
+        : alongPolylineMeters(userLat, userLng, geom);
     if (along > total - endBufferM) return false;
     return true;
   }
@@ -204,13 +264,20 @@ class CrossTrackGeometry {
     List<GeoCoordinate> geometry, {
     double maxCrossTrackM = 45,
     double pastEndBufferM = 60,
+    double? userHeadingDeg,
   }) {
     if (geometry.length < 2) return false;
-    final ct = crossTrackDistanceMeters(userLat, userLng, geometry);
-    if (ct > maxCrossTrackM) return false;
+    final proj = projectOntoPolylineForMatching(
+      userLat,
+      userLng,
+      geometry,
+      userHeadingDeg,
+    );
+    if (proj == null) return false;
+    if (proj.crossTrackMeters > maxCrossTrackM) return false;
     final total = polylineLengthMeters(geometry);
     if (total < 5.0) return true;
-    final along = alongPolylineMeters(userLat, userLng, geometry);
+    final along = proj.alongMeters;
     return along >= -2.0 && along <= total + pastEndBufferM;
   }
 }

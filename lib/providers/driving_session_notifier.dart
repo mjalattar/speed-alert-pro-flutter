@@ -368,26 +368,12 @@ class DrivingSessionNotifier extends StateNotifier<DrivingSessionState> {
   Future<void> startRouteSimulation() async {
     state = state.copyWith(lastError: null);
 
-    if (!state.isTracking || _processor == null) {
-      await startTracking(countDrivingApiSession: false);
-    }
-    if (_processor == null) {
-      state = state.copyWith(
-        lastError:
-            'Cannot start simulation: location pipeline unavailable (permission or session).',
-      );
-      return;
-    }
-
     _mockLocationTester.cancel();
     _simulationActive = false;
     ref.read(simulationMapAnchorProvider.notifier).state = null;
-    if (!_useAndroidFused()) {
-      await _sub?.cancel();
-      _sub = null;
-    }
 
-    // Kotlin: no polyline → abort; never substitute a fake path.
+    // Resolve HERE geometry **before** starting tracking so a failed route does not
+    // leave [isTracking] true without [isSimulating] (Home would show "Stop tracking").
     late final List<GeoCoordinate> routePoints;
     HereSectionSpeedModel? simulationOdSectionModel;
     try {
@@ -406,6 +392,23 @@ class DrivingSessionNotifier extends StateNotifier<DrivingSessionState> {
             'No simulation route: enable HERE in Settings, valid HERE key, and origin/destination (preset 4 can geocode from custom search). Or use Remote speed API + sign-in.',
       );
       return;
+    }
+
+    if (!state.isTracking || _processor == null) {
+      await startTracking(countDrivingApiSession: false);
+    }
+    if (_processor == null) {
+      state = state.copyWith(
+        lastError:
+            'Cannot start simulation: location pipeline unavailable (permission or session).',
+      );
+      return;
+    }
+
+    // Mock positions replace the live Geolocator stream (non-fused); only after route is valid.
+    if (!_useAndroidFused()) {
+      await _sub?.cancel();
+      _sub = null;
     }
 
     _processor!.prepareForRoadTestSimulationStart();

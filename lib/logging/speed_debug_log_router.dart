@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'compare_provider_http_session_logger.dart';
 import 'here_span_fetch_session_logger.dart';
 import 'speed_alert_log_filesystem.dart';
 import 'speed_debug_log_session.dart';
@@ -18,6 +19,7 @@ class SpeedDebugLogRouter {
     await _clearLegacyFetchLog(SpeedDebugLogSession.simulation);
     SpeedLimitApiRequestLogger.clearSessionStorage(SpeedDebugLogSession.simulation);
     HereSpanFetchSessionLogger.clearSession();
+    CompareProviderHttpSessionLogger.clearSession();
     SpeedDebugLogSessionHolder.setActive(SpeedDebugLogSession.simulation);
   }
 
@@ -29,6 +31,7 @@ class SpeedDebugLogRouter {
     await _clearLegacyFetchLog(SpeedDebugLogSession.driving);
     SpeedLimitApiRequestLogger.clearSessionStorage(SpeedDebugLogSession.driving);
     HereSpanFetchSessionLogger.clearSession();
+    CompareProviderHttpSessionLogger.clearSession();
     SpeedDebugLogSessionHolder.setActive(SpeedDebugLogSession.driving);
   }
 

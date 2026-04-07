@@ -92,6 +92,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with RouteAware {
     final showPlatformMap =
         hasMapKey && mapHeight > 0 && widget.tabActive && !_coveredByRoute;
 
+    /// Live GPS only — simulation uses the same [isTracking] session but must not look like
+    /// "driving mode" on Home (Stop / Start).
+    final liveDrivingActive = drive.isTracking && !drive.isSimulating;
+    final simulationRunningOnSession =
+        drive.isTracking && drive.isSimulating;
+
     return Scaffold(
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -180,18 +186,33 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with RouteAware {
                           ),
                           const SizedBox(height: 12),
                           FilledButton.icon(
-                            onPressed: drive.isTracking
-                                ? () => notifier.stopTracking()
-                                : () => notifier.startTracking(),
+                            onPressed: simulationRunningOnSession
+                                ? null
+                                : liveDrivingActive
+                                    ? () => notifier.stopTracking()
+                                    : () => notifier.startTracking(),
                             icon: Icon(
-                              drive.isTracking ? Icons.stop : Icons.play_arrow,
+                              simulationRunningOnSession
+                                  ? Icons.route
+                                  : liveDrivingActive
+                                      ? Icons.stop
+                                      : Icons.play_arrow,
                             ),
                             label: Text(
-                              drive.isTracking
-                                  ? 'Stop tracking'
-                                  : 'Start tracking',
+                              simulationRunningOnSession
+                                  ? 'Simulation running'
+                                  : liveDrivingActive
+                                      ? 'Stop tracking'
+                                      : 'Start tracking',
                             ),
                           ),
+                          if (simulationRunningOnSession) ...[
+                            const SizedBox(height: 8),
+                            Text(
+                              'Road test simulation is active. Stop it from the Testing tab.',
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ],
                         ],
                       ),
                     ),

@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import '../core/android_location_compat.dart';
 import '../core/constants.dart';
 import '../logging/here_span_fetch_session_logger.dart';
 import '../logging/logging_globals.dart';
@@ -77,15 +78,24 @@ class HereApiService {
       HereSpanFetchSessionLogger.recordLocalRouteIfApplicable(prefs, atLat, atLng, root);
     }
 
-    final parsed = parseAlertFetchFromDecodedRoute(root, lat: atLat, lng: atLng);
+    final parsed = parseAlertFetchFromDecodedRoute(
+      root,
+      lat: atLat,
+      lng: atLng,
+      headingDegrees: null,
+    );
     return (geometry: geometry, sectionSpeedModel: parsed.sectionSpeedModel);
   }
 
   /// Kotlin [SpeedLimitAggregator.fetchHereAlertWithStickySegment] — parsing after a decoded `v8/routes` body.
+  ///
+  /// [headingDegrees]: motion heading for polyline matching (weighted segment choice). When null,
+  /// a **start-of-route** tangent is used only if [(lat,lng)] is within ~40 m of the first vertex.
   HereAlertFetchResult parseAlertFetchFromDecodedRoute(
     Map<String, dynamic> root, {
     required double lat,
     required double lng,
+    double? headingDegrees,
   }) {
     final routes = root['routes'] as List<dynamic>?;
     final route = routes?.isNotEmpty == true ? routes!.first as Map<String, dynamic> : null;
@@ -113,8 +123,32 @@ class HereApiService {
       sectionModel = HereSectionSpeedModel.build(spans, geometry);
     }
 
+    double? effectiveHeading = headingDegrees;
+    if ((effectiveHeading == null || !effectiveHeading.isFinite) &&
+        geometry.length >= 2) {
+      final d0 = AndroidLocationCompat.distanceBetweenMeters(
+        lat,
+        lng,
+        geometry.first.lat,
+        geometry.first.lng,
+      );
+      if (d0 < 40.0) {
+        effectiveHeading = gb.bearingDeg(
+          geometry[0].lat,
+          geometry[0].lng,
+          geometry[1].lat,
+          geometry[1].lng,
+        );
+      }
+    }
+
     final alongVehicle = geometry.length >= 2
-        ? CrossTrackGeometry.alongPolylineMeters(lat, lng, geometry)
+        ? CrossTrackGeometry.alongPolylineMetersForMatching(
+            lat,
+            lng,
+            geometry,
+            effectiveHeading,
+          )
         : 0.0;
 
     SpeedLimitData data;
@@ -329,7 +363,12 @@ class HereApiService {
     if (prefs != null) {
       HereSpanFetchSessionLogger.recordLocalRouteIfApplicable(prefs, lat, lng, root);
     }
-    return parseAlertFetchFromDecodedRoute(root, lat: lat, lng: lng);
+    return parseAlertFetchFromDecodedRoute(
+      root,
+      lat: lat,
+      lng: lng,
+      headingDegrees: headingDegrees,
+    );
   }
 
   SpeedLimitData _fromFirstSpan(List<HereSpan> spans) {

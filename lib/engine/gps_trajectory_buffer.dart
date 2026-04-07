@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:geolocator/geolocator.dart';
 
 import '../core/android_location_compat.dart';
@@ -60,6 +62,32 @@ class GpsTrajectoryBuffer {
       }
     }
     return _samples.last.bearingDeg;
+  }
+
+  /// Circular mean of recent reported bearings (when ≥2 samples have bearings) — dampens GPS
+  /// heading jitter for polyline matching. Falls back to [bearingDegreesForMatching].
+  double? bearingDegreesSmoothedForMatching() {
+    final bearings = <double>[];
+    for (var i = _samples.length - 1;
+        i >= 0 && bearings.length < 4;
+        i--) {
+      final b = _samples[i].bearingDeg;
+      if (b != null && b.isFinite) bearings.add(b);
+    }
+    if (bearings.length >= 2) {
+      var sx = 0.0;
+      var sy = 0.0;
+      for (final b in bearings) {
+        final rad = b * math.pi / 180.0;
+        sx += math.sin(rad);
+        sy += math.cos(rad);
+      }
+      if (sx.abs() + sy.abs() > 1e-9) {
+        final ang = math.atan2(sx, sy) * 180.0 / math.pi;
+        return (ang + 360.0) % 360.0;
+      }
+    }
+    return bearingDegreesForMatching();
   }
 
   static const double _minSpeedMpsForPath = 1.0;

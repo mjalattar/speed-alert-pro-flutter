@@ -45,10 +45,10 @@ class AppConfig {
         '92848872267-mqvfo6n406eq3rck37oc37d3kt5uicp8.apps.googleusercontent.com',
   );
 
-  /// Mapbox access token (compare / directions when ported from Kotlin).
+  /// Mapbox access token (Directions compare only — public `pk.` token).
   ///
-  /// Do not commit real tokens. Set at build/run time, e.g.
-  /// `flutter run --dart-define=MAPBOX_ACCESS_TOKEN=pk...`
+  /// No default in repo (GitHub push protection). Set via `--dart-define=MAPBOX_ACCESS_TOKEN=pk....`
+  /// or Android `gradle.properties` / CI secrets.
   static const String mapboxAccessToken = String.fromEnvironment(
     'MAPBOX_ACCESS_TOKEN',
     defaultValue: '',
