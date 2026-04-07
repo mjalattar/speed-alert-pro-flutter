@@ -27,8 +27,7 @@ class DrivingLocationBridge(
             }
 
             override fun onCancel(arguments: Any?) {
-                // Kotlin [MainActivity.onDestroy] unbinds only; [SpeedAlertService] keeps fused updates.
-                // Do not stop the foreground service here — Dart [FusedDrivingLocation.stop] / stopTracking does.
+                // EventChannel cancelled — do not stop the foreground service here (Dart stop/stopTracking does).
                 DrivingLocationHub.eventSink = null
             }
         })
@@ -69,6 +68,6 @@ class DrivingLocationBridge(
         method.setMethodCallHandler(null)
         events.setStreamHandler(null)
         DrivingLocationHub.eventSink = null
-        // Do not stop [DrivingLocationForegroundService] — survives Activity recreate / DKA like Kotlin service.
+        // Do not stop [DrivingLocationForegroundService] — survives Activity recreate / process death scenarios.
     }
 }

@@ -1,4 +1,4 @@
-/// Build-time configuration (mirrors Android [BuildConfig] + [local.properties]).
+/// Build-time configuration (`String.fromEnvironment` / `--dart-define`).
 ///
 /// Defaults match the Speed Alert Pro Android project. Override any value with
 /// `--dart-define=KEY=value` for CI/production without editing source.
@@ -54,7 +54,7 @@ class AppConfig {
     defaultValue: '',
   );
 
-  /// TomTom API key (compare when ported from Kotlin).
+  /// TomTom API key for compare-provider requests.
   static const String tomtomApiKey = String.fromEnvironment(
     'TOMTOM_API_KEY',
     defaultValue: 'T6DkF5gnYZKYB5q6voI8Q9modZzVOKnW',

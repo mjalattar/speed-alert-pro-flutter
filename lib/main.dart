@@ -1,4 +1,3 @@
-// PROJECT_STATUS: 100% VERIFIED_MIRROR
 import 'dart:developer' as developer;
 
 import 'package:flutter/material.dart';
@@ -14,21 +13,17 @@ import 'logging/speed_alert_log_filesystem.dart';
 import 'providers/app_providers.dart';
 import 'services/preferences_manager.dart';
 
-/// Kotlin [SpeedAlertApplication.onCreate] order:
-/// 1. [Application.onCreate] / [instance] (Flutter: binding + prefs).
-/// 2. [Purchases.configure] when [BuildConfig.REVENUECAT_PUBLIC_API_KEY] non-blank.
-/// 3. When [BuildConfig.USE_REMOTE_HERE]: [SupabaseManager.create], [HereEdgeFunctionClient],
-///    then `runBlocking(Dispatchers.IO)` { [awaitAuthReady], [signOutIfAnonymousOnly],
-///    optional [syncRevenueCatWithSupabaseUser] }.
+/// Application startup: initialize logging, shared preferences, RevenueCat when configured,
+/// and Supabase when remote HERE is enabled.
 ///
-/// **Location pipeline** ([SpeedAlertService.onCreate] / [LocationProcessor]) starts only when the user
-/// begins driving tracking — not here (see [DrivingSessionNotifier.startTracking]).
+/// The location pipeline starts only when the user begins driving tracking — not here
+/// (see [DrivingSessionNotifier.startTracking]).
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   await SpeedAlertLogFilesystem.init();
 
-  PreferencesManager.registerAndroidKotlinPrefsParityBeforeOpen();
+  PreferencesManager.registerAndroidSharedPrefsAllowListBeforeOpen();
   final preferencesManager = await PreferencesManager.open();
   initializePreferences(preferencesManager);
   speedAlertLoggingPreferences = preferencesManager;
@@ -45,7 +40,7 @@ Future<void> main() async {
         url: AppConfig.supabaseUrl,
         anonKey: AppConfig.supabaseAnonKey,
       );
-      await runSupabaseAuthBootstrapLikeKotlin();
+      await runSupabaseAuthBootstrap();
     } catch (e, st) {
       developer.log(
         'Supabase init failed (offline or bad URL)',

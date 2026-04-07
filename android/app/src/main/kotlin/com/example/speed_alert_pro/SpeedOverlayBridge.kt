@@ -17,8 +17,8 @@ import io.flutter.plugin.common.MethodChannel
 import kotlin.math.roundToInt
 
 /**
- * Minimal parity with Kotlin [com.speedalertpro.SpeedOverlayController]:
- * TYPE_APPLICATION_OVERLAY, speed/limit text, − (minimize → Dart), × (stop tracking → Dart).
+ * Floating overlay HUD: TYPE_APPLICATION_OVERLAY, speed/limit text,
+ * − (minimize → Dart), × (stop tracking → Dart).
  */
 class SpeedOverlayBridge(
     private val context: Context,

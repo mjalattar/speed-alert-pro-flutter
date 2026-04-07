@@ -6,7 +6,7 @@ import '../engine/here_section_speed_model.dart';
 import '../providers/app_providers.dart';
 import 'preferences_manager.dart';
 
-// --- Same string constants as Kotlin MainActivity.kt (comma lat,lng) ---
+// Preset simulation O/D strings (`lat,lng` comma form).
 
 const String kSimulationDefaultOriginLatLng = '29.5445,-95.0205';
 const String kPresetSimDoveLatLng = '29.5140547,-95.0674492';
@@ -16,7 +16,7 @@ const String kPresetSimDoveHavenStartLatLng = kPresetSimDoveLatLng;
 const String kPresetSimIslaLeagueOriginLatLng = '29.5262731,-95.0114404';
 const String kPresetSimIslaLeagueDestLatLng = '29.5240499,-95.0173834';
 
-/// Kotlin [parseLatLngComma].
+/// Parses `"lat,lng"` into coordinates or returns null if invalid.
 ({double lat, double lng})? parseLatLngComma(String s) {
   final parts = s.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
   if (parts.length != 2) return null;
@@ -27,7 +27,7 @@ const String kPresetSimIslaLeagueDestLatLng = '29.5240499,-95.0173834';
   return (lat: lat, lng: lng);
 }
 
-/// Kotlin [simulationRouteOriginLatLng].
+/// Origin string for the current simulation preset / custom routing fields.
 String simulationRouteOriginLatLng(PreferencesManager preferencesManager) {
   final preset = preferencesManager.simulationDestinationPreset;
   switch (preset) {
@@ -44,7 +44,7 @@ String simulationRouteOriginLatLng(PreferencesManager preferencesManager) {
   }
 }
 
-/// Kotlin `routeDestinationLatLng` when-branch in simulation start.
+/// Destination string for the current simulation preset / custom fields.
 String simulationRouteDestinationLatLngString(
   PreferencesManager preferencesManager,
 ) {
@@ -68,14 +68,14 @@ String simulationRouteDestinationLatLngString(
   }
 }
 
-/// Resolves HERE route geometry for road-test simulation (Kotlin [MainActivity] simulation block).
+/// Resolves HERE route geometry for road-test simulation.
 ///
 /// [sectionSpeedModel] is built from the **same** O–D `v8/routes` (or Edge `kind: route`) response as
-/// [path] so [LocationProcessor] can section-walk on the identical polyline as the mock vehicle
-/// (Kotlin: one route fetch for map + HERE spans; avoids alert-leg geometry mismatch and refetch storms).
+/// [path] so [LocationProcessor] section-walks the identical polyline as the mock vehicle (one fetch for
+/// map + HERE spans; avoids alert-leg geometry mismatch and refetch storms).
 ///
 /// Returns empty [path] if origin/destination invalid or APIs yield no polyline — **no** synthetic
-/// fallback (Kotlin aborts without starting the mock loop).
+/// fallback (simulation does not start).
 Future<({List<GeoCoordinate> path, HereSectionSpeedModel? sectionSpeedModel})> resolveSimulationRoute(
   Ref ref,
 ) async {
@@ -85,7 +85,7 @@ Future<({List<GeoCoordinate> path, HereSectionSpeedModel? sectionSpeedModel})> r
 
   var destStr = simulationRouteDestinationLatLngString(preferencesManager).trim();
 
-  // Kotlin: preset 4 + blank custom lat/lng → HERE Discover on [simulationCustomDestinationQuery].
+  // Preset 4 + blank custom lat/lng → HERE Discover on [simulationCustomDestinationQuery].
   if (preferencesManager.simulationDestinationPreset == 4 && destStr.isEmpty) {
     final q = preferencesManager.simulationCustomDestinationQuery.trim();
     if (q.isNotEmpty && AppConfig.hereApiKey.isNotEmpty) {
@@ -106,7 +106,7 @@ Future<({List<GeoCoordinate> path, HereSectionSpeedModel? sectionSpeedModel})> r
   var o = parseLatLngComma(originStr);
   var d = parseLatLngComma(destStr);
 
-  // Kotlin preset 5: require valid both ends.
+  // Preset 5: require valid both ends.
   if (preferencesManager.simulationDestinationPreset == 5 && (o == null || d == null)) {
     return (path: <GeoCoordinate>[], sectionSpeedModel: null);
   }
@@ -146,7 +146,7 @@ Future<({List<GeoCoordinate> path, HereSectionSpeedModel? sectionSpeedModel})> r
     } catch (_) {}
   }
 
-  // Kotlin local: single O–D [HereApiService.getSpeedLimit] — same response decodes map polyline + spans.
+  // Local HERE: single O–D routing response decodes map polyline + spans.
   if (preferencesManager.isHereApiEnabled && AppConfig.hereApiKey.isNotEmpty) {
     try {
       final od = await hereApi.fetchSimulationOdRouteWithSection(

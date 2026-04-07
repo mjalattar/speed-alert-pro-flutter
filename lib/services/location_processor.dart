@@ -1,5 +1,3 @@
-// PROJECT_STATUS: 100% VERIFIED_MIRROR
-
 import 'dart:async';
 
 import 'package:geolocator/geolocator.dart';
@@ -23,10 +21,9 @@ import 'compare_providers_service.dart';
 import 'preferences_manager.dart';
 import 'speed_limit_aggregator.dart';
 
-/// Flutter port of Android [LocationProcessor].
+/// Driving-location pipeline: HERE alert limits, sticky segments, section-walk, and TomTom/Mapbox compare paths.
 ///
-/// **MECHANICAL_PARITY (Kotlin `LocationProcessor.kt` private thresholds):**
-/// `RELAXED_FIRST_FETCH_SUSTAINED_MS` 800, `SUSTAINED_DRIVING_MS` 2500,
+/// **Thresholds** (private `static const` below): `RELAXED_FIRST_FETCH_SUSTAINED_MS` 800, `SUSTAINED_DRIVING_MS` 2500,
 /// `RELAXED_FIRST_COMPARE_FETCH_SUSTAINED_MS` 0, `MIN_DISTANCE_CHANGE_METERS` 480,
 /// `MIN_HEADING_CHANGE_DEGREES` 45, `MIN_DISTANCE_CHANGE_METERS_REMOTE` 100,
 /// `MIN_HEADING_CHANGE_DEGREES_REMOTE` 22, `MIN_DISPLACEMENT_NOISE_METERS` 10,
@@ -38,15 +35,14 @@ import 'speed_limit_aggregator.dart';
 /// `MAPBOX_NETWORK_MIN_DISPLACEMENT_M` 480, `MAPBOX_NETWORK_MIN_HEADING_CHANGE_DEG` 45,
 /// `MAPBOX_ALONG_POLYLINE_MAX_CROSS_TRACK_M` 70, `MAPBOX_ALONG_POLYLINE_PAST_END_BUFFER_M` 88,
 /// `HEADING_UTURN_MIN_MPH` 12, `U_TURN_HEADING_DELTA_DEG` 125,
-/// `MODERATE_TURN_HEADING_DELTA_DEG` 45, `MODERATE_TURN_HEADING_COOLDOWN_MS` 4000 — same as Dart `static const` values below.
+/// `MODERATE_TURN_HEADING_DELTA_DEG` 45, `MODERATE_TURN_HEADING_COOLDOWN_MS` 4000.
 ///
 /// **Primary (HERE):** [HereSectionSpeedModel] / sticky segment / network — [CrossTrackGeometry] applies to HERE
-/// polylines first. Section-walk uses the span at the current along-polyline position each tick (no
-/// multi-tick vote window; Android Kotlin still uses `SectionWalkMatchVoteBuffer`).
+/// polylines first. Section-walk uses the span at the current along-polyline position each tick (no multi-tick vote).
 /// The debounced alert limit is assigned only in [_applyHereResolvedLimit] from HERE inputs.
 ///
 /// **Comparison (TomTom / Mapbox):** [AnnotationSectionSpeedModel] via [compare] only; [_enqueueCompareSideEffectsForLocationTick]
-/// never writes the alert limit. Async compare fetches are triple-locked like Kotlin.
+/// never writes the alert limit. Async compare fetches use triple-locking.
 class LocationProcessor {
   LocationProcessor({
     required this.preferencesManager,
@@ -59,8 +55,7 @@ class LocationProcessor {
   final SpeedLimitAggregator speedLimitAggregator;
   final CompareProvidersService compare;
 
-  /// Kotlin [SpeedAlertService] callback after [_currentSpeed] / [_currentSpeedLimit] — implementor runs
-  /// [checkSpeedAlert] (state, audible, overlay) in one place.
+  /// Called after speed/limit updates so the owner can refresh UI, audio, and overlay in one place.
   final void Function(double vehicleSpeedMph, double? speedLimitMph) onSpeedUpdate;
 
   bool _pipelinePaused = false;
@@ -109,7 +104,7 @@ class LocationProcessor {
 
   bool _hereFetchInFlight = false;
   Position? _pendingFetchLocation;
-  // Kotlin [pendingFetchSpeedMph]: stored while fetch in flight; chained retry uses fresh [effectiveSpeedMpsAndMph].
+  // Stored while HERE fetch is in flight; chained retry recomputes speed from the pending fix.
   // ignore: unused_field
   double? _pendingFetchSpeedMph;
 
@@ -168,9 +163,8 @@ class LocationProcessor {
     );
   }
 
-  /// After [prepareForRoadTestSimulationStart], seed HERE section-walk state from the same O–D route
-  /// response used for the simulation polyline (Kotlin [MainActivity]: one `getSpeedLimit` / Edge route
-  /// for map; processor then resolves limits along that geometry instead of a divergent alert leg).
+  /// After [prepareForRoadTestSimulationStart], seed HERE section-walk from the same O–D route response
+  /// used for the simulation polyline so limits follow that geometry.
   void primeHereSectionSpeedModelFromSimulationOdRoute(HereSectionSpeedModel? model) {
     if (model == null) return;
     _hereSectionSpeedModel = model;
@@ -184,8 +178,6 @@ class LocationProcessor {
     );
   }
 
-  // VERIFIED: 1:1 Logic match with Kotlin [prepareForRoadTestSimulationStart] /
-  // [clearLimitCacheAfterSimulation] field order (generation → relaxed → sustained → optional log reset → …).
   void _resetSessionState({
     required bool relaxedFirstFetch,
     required bool resetDrivingLogSession,
@@ -234,7 +226,7 @@ class LocationProcessor {
     _lastLoggedDisplayLimitMph = null;
   }
 
-  /// Kotlin [processNewLocation].
+  /// Entry point for each new GPS fix (respects pipeline pause).
   void processNewLocation(
     Position location, {
     int? androidElapsedRealtimeNanos,
@@ -248,7 +240,7 @@ class LocationProcessor {
     );
   }
 
-  /// Kotlin [processNewLocationInner].
+  /// Wraps [processNewLocationInnerBody] and records [_lastProcessedLocation].
   void processNewLocationInner(
     Position location, {
     int? androidElapsedRealtimeNanos,
@@ -265,8 +257,8 @@ class LocationProcessor {
     }
   }
 
-  /// Kotlin [LocationProcessor.processNewLocationInnerBody] lines 240–242: TomTom/Mapbox **compare** enqueue +
-  /// along-polyline cache refresh. **Never** assigns [_currentSpeedLimitMph] — only [_applyHereResolvedLimit] does.
+  /// TomTom/Mapbox **compare** enqueue + along-polyline cache refresh. **Never** assigns [_currentSpeedLimitMph]
+  /// — only [_applyHereResolvedLimit] does.
   void _enqueueCompareSideEffectsForLocationTick(
     Position location,
     double rawMph,
@@ -281,8 +273,7 @@ class LocationProcessor {
     _applyCompareRouteModelsAlongPolyline(location, headingForPolyline);
   }
 
-  /// Kotlin [LocationProcessor.processNewLocationInnerBody].
-  // VERIFIED: 1:1 Logic match with Kotlin (same call order: speed → anchors → traj add → logging → heading → …).
+  /// Per-fix pipeline: speed → sustained anchors → trajectory → logging → heading → HERE/compare side effects.
   void processNewLocationInnerBody(
     Position location, {
     int? androidElapsedRealtimeNanos,
@@ -414,7 +405,6 @@ class LocationProcessor {
     }
   }
 
-  // VERIFIED: 1:1 Logic match with Kotlin [speedMpsAndRawMph].
   (double, double) _speedMpsAndRawMph(Position location) {
     if (AndroidLocationCompat.positionHasReportedSpeed(location) &&
         location.speed >= 0) {
@@ -424,8 +414,7 @@ class LocationProcessor {
     return (0.0, 0.0);
   }
 
-  // VERIFIED: 1:1 Logic match with Kotlin [effectiveSpeedMpsAndMph]
-  // (`(time−time)/1000`, [Location.distanceTo], `coerceIn` on inferred m/s).
+  // Device speed when trusted; else infer from displacement / Δt with clamps.
   (double, double) _effectiveSpeedMpsAndMph(Position location) {
     final device = _speedMpsAndRawMph(location);
     if (AndroidLocationCompat.positionHasReportedSpeed(location) &&
@@ -604,9 +593,9 @@ class LocationProcessor {
         _invalidateRouteGeometryForSharpTurn();
         _lastModerateHeadingInvalidateUtcMs = locationTimeUtcMs;
       } else if (delta >= MODERATE_TURN_HEADING_DELTA_DEG) {
-        // Kotlin: `(locationTimeUtcMs - lastModerateHeadingInvalidateUtcMs).coerceAtLeast(0L)`
+        // Elapsed ms since last moderate invalidate, floored at 0.
         final sinceLastModerate = _lastModerateHeadingInvalidateUtcMs == 0
-            ? AndroidLocationCompat.kotlinLongMaxValue
+            ? AndroidLocationCompat.javaLongMaxValue
             : (locationTimeUtcMs - _lastModerateHeadingInvalidateUtcMs)
                 .clamp(0, 1 << 62);
         if (sinceLastModerate >= MODERATE_TURN_HEADING_COOLDOWN_MS) {
@@ -943,8 +932,7 @@ class LocationProcessor {
       _pendingFetchLocation = null;
       _pendingFetchSpeedMph = null;
       if (next != null && generation == _speedFetchGeneration) {
-        // Kotlin [enqueueHereFetch] finally: `(nextMps, nextRaw) = effectiveSpeedMpsAndMph(next)`;
-        // `nextDisplay = nextRaw` — does **not** use [pendingFetchSpeedMph] for the chained call.
+        // Recompute speed from the chained fix; display follows raw effective mph, not the stale pending field.
         final nextPair = _effectiveSpeedMpsAndMph(next);
         final nextMps = nextPair.$1;
         final nextRaw = nextPair.$2;
@@ -1073,15 +1061,15 @@ class LocationProcessor {
     }
   }
 
-  /// Kotlin [LocationProcessor.applyHereResolvedLimit] — **HERE-only** “brain” for the posted alert limit.
+  /// **HERE-only** resolution path for the posted alert limit.
   ///
-  /// Sequence (same as Kotlin):
+  /// Sequence:
   /// 1. Sanity / route context for raw HERE [rawMph] (caller already chose section-walk, sticky, or network).
   /// 2. Optional local [SpeedLimitStabilizer] + material / small-up / moderate-down gates.
   /// 3. [DownwardLimitDebouncer] commit → assign [_currentSpeedLimitMph].
   /// 4. [SpeedLimitLoggingContext.setHereCompareMphCell] + optional [SpeedFetchDebugLogger.append] with TomTom/Mapbox
-  ///    peek columns (comparison mph only — same tick’s cache as Kotlin [peekCachedCompareTomTomMapboxMph]).
-  /// 5. [onSpeedUpdate] — **sole** driver for alert UI / audio (Kotlin [checkSpeedAlert] in notifier).
+  ///    peek columns (comparison mph from the same tick’s cache).
+  /// 5. [onSpeedUpdate] — **sole** driver for alert UI / audio in the session notifier.
   ///
   /// TomTom/Mapbox **never** enter this method; they run in [_enqueueCompareSideEffectsForLocationTick] / async queues.
   void _applyHereResolvedLimit({

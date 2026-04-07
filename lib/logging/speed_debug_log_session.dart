@@ -1,4 +1,4 @@
-/// Kotlin [SpeedDebugLogSession].
+/// Which high-level session owns on-disk speed logs.
 enum SpeedDebugLogSession {
   none,
   simulation,

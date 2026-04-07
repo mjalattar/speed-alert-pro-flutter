@@ -1,4 +1,4 @@
-/// Mirrors Kotlin [SpeedLimitMaterialChangeGate].
+/// Debounces large raw HERE limit changes (material up/down / high→low drop).
 class SpeedLimitMaterialChangeGate {
   SpeedLimitMaterialChangeGate({
     this.materialDeltaMph = defaultMaterialDeltaMph,
@@ -56,7 +56,7 @@ class SpeedLimitMaterialChangeGate {
   }
 }
 
-/// Mirrors Kotlin [SpeedLimitSmallUpGate].
+/// Debounces small upward limit bumps below the material threshold.
 class SpeedLimitSmallUpGate {
   SpeedLimitSmallUpGate({
     this.minBumpMph = defaultMinBump,
@@ -106,7 +106,7 @@ class SpeedLimitSmallUpGate {
   }
 }
 
-/// Mirrors Kotlin [SpeedLimitModerateDownGate].
+/// Debounces moderate downward limit drops below the material threshold.
 class SpeedLimitModerateDownGate {
   SpeedLimitModerateDownGate({
     this.minDropMph = defaultMinDrop,
@@ -154,7 +154,7 @@ class SpeedLimitModerateDownGate {
   }
 }
 
-/// Mirrors Kotlin [DownwardLimitDebouncer].
+/// Time-based debouncer for committing lower posted limits.
 class DownwardLimitDebouncer {
   int? _lastCommitted;
   int? _pending;

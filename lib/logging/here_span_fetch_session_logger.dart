@@ -5,7 +5,7 @@ import 'log_export_platform.dart';
 import 'speed_debug_log_session.dart';
 import 'speed_limit_api_request_logger.dart';
 
-/// Kotlin [HereSpanFetchSessionLogger] — per-span mph from local HERE JSON.
+/// Records per-span mph slices from local HERE route JSON for debug export.
 class HereSpanFetchSessionLogger {
   HereSpanFetchSessionLogger._();
 

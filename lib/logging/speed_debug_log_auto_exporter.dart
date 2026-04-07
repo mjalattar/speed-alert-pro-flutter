@@ -5,7 +5,7 @@ import 'speed_debug_log_router.dart';
 import 'speed_debug_log_session.dart';
 import 'speed_fetch_debug_logger.dart';
 
-/// Kotlin [SpeedDebugLogAutoExporter].
+/// Copies finished simulation logs to Downloads when auto-export is enabled.
 class SpeedDebugLogAutoExporter {
   SpeedDebugLogAutoExporter._();
 

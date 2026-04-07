@@ -7,11 +7,11 @@ import '../engine/geo_coordinate.dart';
 import '../core/polyline_decoder.dart';
 import '../models/speed_limit_data.dart';
 
-/// Flutter port of Kotlin [HereEdgeFunctionClient] — Supabase Edge `here-speed`.
+/// Supabase Edge Function client for `here-speed` (alert + route simulation).
 class HereEdgeFunctionClient {
   HereEdgeFunctionClient({required this.accessTokenProvider});
 
-  /// Kotlin constructor [accessTokenProvider]: suspend () -> String
+  /// Returns a JWT (e.g. Supabase session) for `Authorization: Bearer`.
   final Future<String> Function() accessTokenProvider;
 
   Uri get _url =>
@@ -26,7 +26,7 @@ class HereEdgeFunctionClient {
     double? headingDegrees,
   }) async {
     final token = await accessTokenProvider();
-    // Gson default: null fields omitted — matches Kotlin [HereEdgeAlertBody] serialization.
+    // Omit null/optional keys — Edge expects sparse JSON like the native client.
     final bodyMap = <String, dynamic>{
       'lat': lat,
       'lng': lng,
@@ -50,7 +50,7 @@ class HereEdgeFunctionClient {
       category: 'Supabase_here-speed',
       countTowardSession: false,
     );
-    // Kotlin [HereEdgeFunctionClient]: count after successful OkHttp execute(), not on IOException.
+    // Count after a completed HTTP response (not on transport failure before response).
     SpeedLimitApiSessionCounter.recordIfSessionActive();
 
     if (res.statusCode == 402) {
@@ -113,8 +113,7 @@ class HereEdgeFunctionClient {
     );
   }
 
-  /// Kotlin [HereEdgeFunctionClient] `kind: "route"` — full HERE-shaped body + decoded polyline
-  /// (same JSON [HereApiService.parseAlertFetchFromDecodedRoute] expects for span / section model).
+  /// `kind: "route"` — full HERE-shaped body + decoded polyline for [HereApiService.parseAlertFetchFromDecodedRoute].
   Future<({List<GeoCoordinate> geometry, Map<String, dynamic> root})?> fetchRoutePolylineForSimulation({
     required double originLat,
     required double originLng,

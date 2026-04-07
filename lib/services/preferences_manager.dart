@@ -1,4 +1,3 @@
-// PROJECT_STATUS: 100% VERIFIED_MIRROR
 import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/services.dart';
@@ -7,20 +6,20 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../config/app_config.dart';
 import '../core/constants.dart';
 
-/// Flutter port of Android [PreferencesManager] — same **keys**, **defaults**, and (on Android) **XML file**
-/// `SpeedAlertPrefs` via [MainActivity] Pigeon override + [registerAndroidKotlinPrefsParityBeforeOpen].
+/// App preferences: same **keys**, **defaults**, and (on Android) **XML file** `SpeedAlertPrefs` via
+/// [MainActivity] Pigeon override + [registerAndroidSharedPrefsAllowListBeforeOpen].
 class PreferencesManager {
   PreferencesManager(this._prefs);
 
   final SharedPreferences _prefs;
 
-  /// Kotlin [SharedPreferences.Editor.commit] — single atomic write on Android [SpeedAlertPrefs].
+  /// Single atomic `commit`-style write on Android [SpeedAlertPrefs].
   static const MethodChannel _nativePrefsCommit =
       MethodChannel('speed_alert_pro/speed_alert_prefs');
 
   static const _kAlertThreshold = 'alert_threshold_mph';
   static const _kAudibleAlert = 'audible_alert_enabled';
-  /// Kotlin [PreferencesManager] legacy key — migrated once to [alertRunMode].
+  /// Legacy key — migrated once to [alertRunMode].
   static const _kBackgroundAlert = 'background_alert_enabled';
   static const _kAlertRunMode = 'alert_run_mode';
   static const _kApiHere = 'api_here_enabled';
@@ -34,7 +33,7 @@ class PreferencesManager {
   static const _kOverlayHudMinimized = 'overlay_hud_minimized';
 
   /// Flutter-only: last explicit “Start driving” while Android fused FG service may still be running
-  /// after Activity/engine death (DKA). Kotlin has no equivalent key; safe in shared [SpeedAlertPrefs].
+  /// after Activity/engine death (DKA). Stored in shared [SpeedAlertPrefs].
   static const _kFlutterDrivingTrackingActive = 'flutter_driving_tracking_active';
 
   static const _kSimDestPreset = 'sim_dest_preset';
@@ -45,8 +44,8 @@ class PreferencesManager {
   static const _kSimRoutingOriginLatlng = 'sim_routing_origin_latlng';
   static const _kSimRoutingDestLatlng = 'sim_routing_dest_latlng';
 
-  /// Kotlin [PreferencesManager] key set — required when [SharedPreferences.setPrefix] is `''` on Android.
-  static const Set<String> androidKotlinPrefsAllowList = {
+  /// Keys allowed when [SharedPreferences.setPrefix] is `''` on Android (no `flutter.` prefix).
+  static const Set<String> androidNativePrefsAllowList = {
     'alert_threshold_mph',
     'audible_alert_enabled',
     'background_alert_enabled',
@@ -70,14 +69,14 @@ class PreferencesManager {
     'flutter_driving_tracking_active',
   };
 
-  /// Call **before** [SharedPreferences.getInstance] on Android so keys match Kotlin (no `flutter.` prefix).
-  static void registerAndroidKotlinPrefsParityBeforeOpen() {
+  /// Call **before** [SharedPreferences.getInstance] on Android so native XML keys resolve without a prefix.
+  static void registerAndroidSharedPrefsAllowListBeforeOpen() {
     if (kIsWeb) return;
     try {
       if (defaultTargetPlatform == TargetPlatform.android) {
         SharedPreferences.setPrefix(
           '',
-          allowList: androidKotlinPrefsAllowList,
+          allowList: androidNativePrefsAllowList,
         );
       }
     } catch (_) {
@@ -87,12 +86,12 @@ class PreferencesManager {
 
   static Future<PreferencesManager> open() async {
     final p = await SharedPreferences.getInstance();
-    await _runKotlinParityMigrations(p);
+    await _runFirstLaunchPreferenceMigrations(p);
     return PreferencesManager(p);
   }
 
-  /// Kotlin [PreferencesManager] first-launch migrations (sim preset indices, alert run mode).
-  static Future<void> _runKotlinParityMigrations(SharedPreferences p) async {
+  /// First-launch migrations (sim preset indices, alert run mode).
+  static Future<void> _runFirstLaunchPreferenceMigrations(SharedPreferences p) async {
     if (p.getBool(_kSimDestPresetMigratedElCamino) != true) {
       final stored = p.getInt(_kSimDestPreset) ?? 0;
       final migrated = stored == 2 ? 3 : stored;
@@ -143,7 +142,7 @@ class PreferencesManager {
   bool get isMapboxApiEnabled => _prefs.getBool(_kApiMapbox) ?? false;
   set isMapboxApiEnabled(bool v) => _prefs.setBool(_kApiMapbox, v);
 
-  /// Kotlin [PreferencesManager.useRemoteSpeedApi]: false if key never written; only Edge when true + build has Supabase.
+  /// `false` if key never written; Edge is used only when true and the build has Supabase configured.
   bool get useRemoteSpeedApi {
     if (!AppConfig.useRemoteHere) return false;
     if (!_prefs.containsKey(_kUseRemoteSpeedApi)) {
@@ -212,8 +211,8 @@ class PreferencesManager {
   set simulationRoutingDestinationLatLng(String v) =>
       _prefs.setString(_kSimRoutingDestLatlng, v);
 
-  /// Kotlin [PreferencesManager.flushSimulationFormInputsToDisk] — `commit`-style batch write so
-  /// simulation fields survive preset switches and process death before async `apply` would finish.
+  /// `commit`-style batch write so simulation fields survive preset switches and process death
+  /// before async `apply` would finish.
   Future<void> flushSimulationFormInputsToDisk({
     required String routingOriginLatLng,
     required String routingDestinationLatLng,

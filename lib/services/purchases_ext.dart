@@ -1,12 +1,12 @@
 import 'package:flutter/services.dart';
 import 'package:purchases_flutter/purchases_flutter.dart';
 
-/// Kotlin [PurchasesExt] — [IllegalStateException] with `error.message + " (" + error.code + ")"`.
+/// Helpers around [purchases_flutter] with consistent [StateError] messages.
 class PurchasesExt {
   PurchasesExt._();
 
-  /// Same string shape as Kotlin [PurchasesError] passed to [IllegalStateException].
-  static String kotlinStylePurchasesErrorMessage(Object error) {
+  /// Builds `message (code)` from [PlatformException] or common plugin error shapes.
+  static String formatPurchasesErrorMessage(Object error) {
     if (error is PlatformException) {
       final m = error.message ?? '';
       final c = error.code;
@@ -23,21 +23,21 @@ class PurchasesExt {
     return error.toString();
   }
 
-  /// Kotlin [Purchases.awaitCustomerInfo].
+  /// [Purchases.getCustomerInfo] wrapped to throw [StateError] on failure.
   static Future<CustomerInfo> awaitCustomerInfo() async {
     try {
       return await Purchases.getCustomerInfo();
     } catch (e) {
-      throw StateError(kotlinStylePurchasesErrorMessage(e));
+      throw StateError(formatPurchasesErrorMessage(e));
     }
   }
 
-  /// Kotlin [Purchases.awaitRestorePurchases].
+  /// [Purchases.restorePurchases] wrapped to throw [StateError] on failure.
   static Future<CustomerInfo> awaitRestorePurchases() async {
     try {
       return await Purchases.restorePurchases();
     } catch (e) {
-      throw StateError(kotlinStylePurchasesErrorMessage(e));
+      throw StateError(formatPurchasesErrorMessage(e));
     }
   }
 }

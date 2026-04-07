@@ -19,7 +19,7 @@ class MainActivity : FlutterActivity() {
         // Run migration before Dart reads prefs (first frame / SharedPreferences.getInstance).
         SpeedAlertSharedPreferencesHandler.migrateFromFlutterPluginStoreIfNeeded(applicationContext)
         super.configureFlutterEngine(flutterEngine)
-        // After plugin registration: bind Pigeon to `SpeedAlertPrefs` (Kotlin [PreferencesManager] file).
+        // After plugin registration: bind Pigeon to `SpeedAlertPrefs` XML store.
         Messages.SharedPreferencesApi.setUp(
             flutterEngine.dartExecutor.binaryMessenger,
             SpeedAlertSharedPreferencesHandler(applicationContext),

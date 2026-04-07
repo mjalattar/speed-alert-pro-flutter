@@ -269,7 +269,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with RouteAware {
     }
   }
 
-  /// Mirrors [SpeedAlertService.checkSpeedAlert] audible branch.
+  /// Plays debounced beeps when speeding per alert mode and foreground rules.
   void _maybeAudibleAlert(
     PreferencesManager preferencesManager,
     bool appInForeground,

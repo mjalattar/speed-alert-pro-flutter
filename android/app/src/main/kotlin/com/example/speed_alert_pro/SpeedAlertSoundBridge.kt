@@ -10,7 +10,7 @@ import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 
 /**
- * Kotlin [SpeedAlertService.checkSpeedAlert] — debounced [ToneGenerator.TONE_PROP_BEEP].
+ * Debounced [ToneGenerator.TONE_PROP_BEEP] for speed alerts.
  * Policy (audible + run mode + foreground) is applied in Dart; native only rate-limits playback.
  */
 class SpeedAlertSoundBridge(engine: FlutterEngine) {
@@ -29,7 +29,7 @@ class SpeedAlertSoundBridge(engine: FlutterEngine) {
                     val minIntervalMs = (call.argument<Number>("minIntervalMs")?.toLong() ?: 3000L)
                     val durationMs = (call.argument<Number>("durationMs")?.toInt() ?: 200)
                     val now = System.currentTimeMillis()
-                    // Kotlin [SpeedAlertService.checkSpeedAlert]: `currentTime - lastAlertTime > 3000` — block when <= 3000.
+                    // Block when within minIntervalMs since last beep.
                     if (now - lastAlertTimeMs <= minIntervalMs) {
                         result.success(false)
                         return@setMethodCallHandler
@@ -37,7 +37,7 @@ class SpeedAlertSoundBridge(engine: FlutterEngine) {
                     lastAlertTimeMs = now
                     mainHandler.post {
                         try {
-                            Log.d("SpeedAlertService", "Playing tone alert")
+                            Log.d("SpeedAlertSound", "Playing tone alert")
                             toneGenerator?.startTone(ToneGenerator.TONE_PROP_BEEP, durationMs)
                         } catch (_: Exception) {
                         }

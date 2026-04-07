@@ -1,4 +1,4 @@
-/// Kotlin [SpeedFetchDebugLogger.HereFetchTelemetry].
+/// HERE fetch timing and outcome fields for CSV debug rows.
 class HereFetchTelemetry {
   const HereFetchTelemetry({
     required this.requestUtc,

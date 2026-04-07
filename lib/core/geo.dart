@@ -3,12 +3,11 @@ import 'dart:math' as math;
 /// Shared geodesic helpers (bearing = degrees clockwise from north, same as
 /// [android.location.Location.getBearing]).
 ///
-/// Kotlin [com.speedalertpro.Geo].
-// VERIFIED: 1:1 Logic match with Kotlin (rEarth 6378137.0, asin/atan2 chain).
+/// Geodesic offset and bearing helpers (WGS84 mean Earth radius 6378137 m).
 class Geo {
   Geo._();
 
-  /// Kotlin [Geo.offsetLatLngMeters].
+  /// Offset a WGS84 point by [distanceM] meters at [bearingDeg] (degrees clockwise from north).
   static ({double lat, double lng}) offsetLatLngMeters(
     double lat,
     double lng,

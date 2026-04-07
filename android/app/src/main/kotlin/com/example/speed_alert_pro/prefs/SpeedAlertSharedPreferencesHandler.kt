@@ -17,11 +17,10 @@ import java.util.HashMap
 import java.util.HashSet
 
 /**
- * Kotlin [PreferencesManager] uses [Context.getSharedPreferences]("SpeedAlertPrefs", …).
- * Re-binds Pigeon [Messages.SharedPreferencesApi] to that file (after [MainActivity] overwrites
- * the plugin default [FlutterSharedPreferences] handler).
+ * [Context.getSharedPreferences]("SpeedAlertPrefs", …) implementation for Pigeon [Messages.SharedPreferencesApi]
+ * (after [MainActivity] overrides the plugin default handler).
  *
- * Logic mirrors [io.flutter.plugins.sharedpreferences.LegacySharedPreferencesPlugin] (same encodings).
+ * Encoding matches [io.flutter.plugins.sharedpreferences.LegacySharedPreferencesPlugin].
  */
 class SpeedAlertSharedPreferencesHandler(context: Context) : Messages.SharedPreferencesApi {
 
@@ -63,7 +62,7 @@ class SpeedAlertSharedPreferencesHandler(context: Context) : Messages.SharedPref
         private const val TAG = "SpeedAlertPrefs"
         const val SPEED_ALERT_PREFS_NAME = "SpeedAlertPrefs"
 
-        /** Keys matching Kotlin [PreferencesManager] (unprefixed — Dart uses [SharedPreferences.setPrefix] ''). */
+        /** Keys stored unprefixed (Dart uses [SharedPreferences.setPrefix] ''). */
         private val MIGRATION_KEYS = arrayOf(
             "alert_threshold_mph",
             "audible_alert_enabled",

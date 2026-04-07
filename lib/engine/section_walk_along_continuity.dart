@@ -2,7 +2,7 @@ import 'dart:math' as math;
 
 import 'package:geolocator/geolocator.dart';
 
-/// Mirrors Kotlin [SectionWalkAlongContinuity].
+/// Guards HERE section-walk jumps using along-polyline continuity and speed.
 class SectionWalkAlongContinuity {
   double? _lastAlongM;
   int? _lastTimeMs;

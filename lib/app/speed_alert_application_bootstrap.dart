@@ -5,13 +5,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../config/app_config.dart';
 
-/// Kotlin [SpeedAlertApplication] block that runs after Supabase client creation:
-/// [SupabaseManager.awaitAuthReady], [SupabaseManager.signOutIfAnonymousOnly],
-/// and [SpeedAlertApplication.syncRevenueCatWithSupabaseUser] when a non-anonymous session exists.
-///
-/// Mirrors `runBlocking(Dispatchers.IO) { ... }` in [SpeedAlertApplication.onCreate].
-// VERIFIED: 1:1 Logic match with Kotlin (auth readiness, anonymous sign-out, RC logIn).
-Future<void> runSupabaseAuthBootstrapLikeKotlin() async {
+/// Post–Supabase-init bootstrap: drop anonymous-only sessions and sync RevenueCat when a real session exists.
+Future<void> runSupabaseAuthBootstrap() async {
   try {
     await signOutIfAnonymousOnly();
     if (hasGoogleOrNonAnonymousSession()) {
@@ -27,7 +22,7 @@ Future<void> runSupabaseAuthBootstrapLikeKotlin() async {
   }
 }
 
-/// Kotlin [SupabaseManager.signOutIfAnonymousOnly].
+/// Signs out if the current user is anonymous-only.
 Future<void> signOutIfAnonymousOnly() async {
   final user = Supabase.instance.client.auth.currentUser;
   if (user == null) return;
@@ -39,7 +34,7 @@ Future<void> signOutIfAnonymousOnly() async {
   }
 }
 
-/// Kotlin [SupabaseManager.hasGoogleOrNonAnonymousSession].
+/// True when a session exists with at least one non-anonymous identity.
 bool hasGoogleOrNonAnonymousSession() {
   if (Supabase.instance.client.auth.currentSession == null) return false;
   final user = Supabase.instance.client.auth.currentUser;
@@ -49,7 +44,7 @@ bool hasGoogleOrNonAnonymousSession() {
   return ids.any((i) => i.provider.trim().toLowerCase() != 'anonymous');
 }
 
-/// Kotlin [SpeedAlertApplication.syncRevenueCatWithSupabaseUser].
+/// Associates RevenueCat with the signed-in Supabase user id.
 Future<void> syncRevenueCatWithSupabaseUser() async {
   final uid = Supabase.instance.client.auth.currentUser?.id;
   if (uid == null) return;

@@ -4,7 +4,7 @@ import 'speed_debug_log_session.dart';
 import 'speed_limit_api_request_logger.dart';
 import '../services/preferences_manager.dart';
 
-/// Session-scoped TomTom / Mapbox HTTP rows for a dedicated CSV export (mirrors HERE span sidecar files).
+/// Session-scoped TomTom / Mapbox HTTP rows for a dedicated CSV export (alongside HERE span logs).
 class CompareProviderHttpSessionLogger {
   CompareProviderHttpSessionLogger._();
 

@@ -10,7 +10,8 @@ import '../logging/speed_limit_api_session_counter.dart';
 import '../providers/app_providers.dart';
 import '../providers/driving_session_notifier.dart';
 import '../widgets/speed_session_summary_card.dart';
-/// Kotlin “Testing” tab: speed/limit card, map, Road Test Simulator (mirrors [TestingModeContent]).
+
+/// Testing tab: speed/limit card, map, and road-test simulator.
 class TestingScreen extends ConsumerStatefulWidget {
   const TestingScreen({super.key, this.tabActive = true});
 
@@ -27,7 +28,7 @@ class _TestingScreenState extends ConsumerState<TestingScreen> {
 
   GoogleMapController? _mapController;
 
-  /// Kotlin [MainActivity]: fit bounds once per route; then [newLatLng] follow from [currentLocation].
+  /// Fit camera bounds once per route; then follow the simulated vehicle marker.
   void _fitSimulationRoute(List<GeoCoordinate> route) {
     final c = _mapController;
     if (!mounted || c == null || route.length < 2) return;

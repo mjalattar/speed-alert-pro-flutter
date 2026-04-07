@@ -1,7 +1,7 @@
-/// Mirrors [HereRouteSpeedLimits.ALERT_ROUTE_LEAD_METERS] on Android.
+/// Virtual route “lead” ahead of the vehicle for HERE / compare APIs (meters).
 const double kAlertRouteLeadMeters = 1000.0;
 
-/// Mirrors [LOW_SPEED_ALERT_SUPPRESS_BELOW_MPH].
+/// Below this GPS speed (mph), optional suppression of alerts can apply.
 const double kLowSpeedAlertSuppressBelowMph = 15.0;
 
 /// [PreferencesManager] alert run modes.
@@ -11,7 +11,7 @@ abstract final class AlertRunMode {
   static const int backgroundOverlay = 2;
 }
 
-/// UI theme (mirrors [AppThemeMode]).
+/// UI theme mode stored in preferences.
 abstract final class AppThemeMode {
   static const int auto = 0;
   static const int light = 1;

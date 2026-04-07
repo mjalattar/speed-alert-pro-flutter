@@ -4,7 +4,7 @@ import 'package:flutter/services.dart';
 import '../core/constants.dart';
 import 'preferences_manager.dart';
 
-/// Kotlin [SpeedAlertService.checkSpeedAlert] audible branch — native debounced beep.
+/// Native debounced speeding beep when alerts are eligible.
 class SpeedAlertSoundPlatform {
   SpeedAlertSoundPlatform._();
 

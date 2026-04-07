@@ -6,7 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../config/app_config.dart';
 
-/// Mirrors Kotlin [GoogleSignInContent] + Supabase [signInWithGoogleIdToken] + RevenueCat [logIn].
+/// Google Sign-In → Supabase session → optional RevenueCat [logIn].
 ///
 /// Note: Android uses Credential Manager with a SHA-256 hashed nonce; `google_sign_in` 6.x has no
 /// nonce on [GoogleSignIn]. If your Supabase project requires nonce for Google, upgrade

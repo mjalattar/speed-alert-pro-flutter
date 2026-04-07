@@ -20,6 +20,6 @@ void main() {
         ),
       ),
     );
-    expect(find.text('Speed Alert Pro'), findsOneWidget);
+    expect(find.text('Location tracking'), findsOneWidget);
   });
 }

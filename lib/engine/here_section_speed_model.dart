@@ -21,7 +21,7 @@ class HereSpan {
   final String? segmentRef;
   final double? functionalClass;
 
-  /// Kotlin Gson: missing [offset]/[length] on [Span] deserialize as **0** (non-nullable [Int]).
+  /// Missing [offset]/[length] in JSON deserialize as **0** (non-nullable ints).
   /// Dropping those spans made [spans] empty so HERE returned 200 with limits in the raw JSON but
   /// [parseAlertFetchFromDecodedRoute] yielded `network_no_mph`.
   static int _routingIntField(dynamic v) {
@@ -39,7 +39,7 @@ class HereSpan {
     return null;
   }
 
-  /// HERE Routing `v8/routes` section span — same field coercion as Kotlin [Span] + Gson defaults.
+  /// HERE Routing `v8/routes` section span with strict field coercion / defaults.
   static HereSpan fromHereRoutingApiJson(Map<String, dynamic> m) {
     return HereSpan(
       offset: _routingIntField(m['offset']),
@@ -73,8 +73,7 @@ class SpanSlice {
   final HereSpan span;
 }
 
-/// Mirrors Kotlin [HereSectionSpeedModel].
-/// VERIFIED: 1:1 Logic match with Kotlin (prefix distances via Android [Location.distanceTo]).
+/// HERE section spans with cumulative along-polyline distances (WGS84 via [AndroidLocationCompat]).
 class HereSectionSpeedModel {
   HereSectionSpeedModel({
     required this.geometry,

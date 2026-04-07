@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 
 import 'speed_debug_log_session.dart';
 
-/// Android MediaStore export — Kotlin [SpeedLimitApiRequestLogger.copySessionRequestsToPublicDownloads].
+/// Android MediaStore export of unified logs to the user’s Downloads folder.
 class LogExportPlatform {
   LogExportPlatform._();
 

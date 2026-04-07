@@ -22,9 +22,9 @@ final prefsRevisionProvider = StateProvider<int>((ref) => 0);
 /// [PreferencesManager] plus a changing [revision] so Riverpod notifies after SharedPreferences writes.
 typedef PrefsSnapshot = ({int revision, PreferencesManager preferencesManager});
 
-/// Kotlin [AppForegroundTracker.isMainActivityVisible] — `false` at init; then lockstep with
-/// [DrivingSessionNotifier.syncAppLifecycle]: `resumed` → true; `paused`/`hidden`/`detached` → false;
-/// `inactive` does not toggle (matches Activity through notification shade). See [AppForegroundTracker].
+/// Main shell visibility for alert gating — `false` at init; then follows [DrivingSessionNotifier.syncAppLifecycle]:
+/// `resumed` → true; `paused`/`hidden`/`detached` → false; `inactive` does not toggle.
+/// See [AppForegroundTracker].
 final appForegroundVisibleProvider = StateProvider<bool>((ref) {
   return AppForegroundTracker.isMainActivityVisible;
 });
@@ -38,7 +38,7 @@ final preferencesProvider = Provider<PrefsSnapshot>((ref) {
   return (revision: revision, preferencesManager: p);
 });
 
-/// Kotlin [HereApiService.create] — single HERE REST client for the app.
+/// Single shared [HereApiService] for local HERE routing / discover.
 final hereApiServiceProvider = Provider<HereApiService>(
   (ref) => HereApiService.create(apiKey: AppConfig.hereApiKey),
 );
@@ -56,13 +56,14 @@ final hereEdgeFunctionClientProvider = Provider<HereEdgeFunctionClient?>((ref) {
   );
 });
 
-/// Kotlin [SpeedLimitAggregator] (HERE alert fetch routing).
+/// TomTom / Mapbox compare fetches and sticky cache (not the HERE alert limit path).
 final compareProvidersServiceProvider = Provider<CompareProvidersService>((ref) {
   return CompareProvidersService(
     preferencesManager: ref.watch(preferencesProvider).preferencesManager,
   );
 });
 
+/// HERE alert + progressive compare rows (Edge or local REST).
 final speedLimitAggregatorProvider = Provider<SpeedLimitAggregator>((ref) {
   return SpeedLimitAggregator(
     preferencesManager: ref.watch(preferencesProvider).preferencesManager,

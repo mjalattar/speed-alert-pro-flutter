@@ -6,8 +6,7 @@ import '../engine/geo_coordinate.dart';
 /// Decodes the compressed polyline format returned by HERE Routing API v8.
 /// Based on official specification: https://github.com/heremaps/flexible-polyline
 ///
-/// Kotlin [com.speedalertpro.PolylineDecoder] — returns [GeoCoordinate] instead of [android.location.Location].
-// VERIFIED: 1:1 Logic match with Kotlin (varint decode, bitmask, multiplier, lat/lng/z order).
+/// Decodes HERE flexible polylines into [GeoCoordinate] vertices.
 class PolylineDecoder {
   PolylineDecoder._();
 
@@ -35,7 +34,7 @@ class PolylineDecoder {
 
     if (encoded.isEmpty) return results;
 
-    // Format version (Kotlin stores in `version`; not used after decode).
+    // Format version (read for spec compliance; not used after decode).
     // ignore: unused_local_variable
     final version = decodeUnsignedVarint();
 
@@ -47,7 +46,7 @@ class PolylineDecoder {
 
     var lastLat = 0;
     var lastLng = 0;
-    // Kotlin `lastZ` — accumulated third dimension; not read (same as Kotlin).
+    // Accumulated third dimension; not emitted in our [GeoCoordinate] list.
     // ignore: unused_local_variable
     var lastZ = 0;
 

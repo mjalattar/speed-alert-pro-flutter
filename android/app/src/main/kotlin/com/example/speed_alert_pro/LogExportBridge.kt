@@ -14,7 +14,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-/** Kotlin parity: export unified CSV / HERE span CSV / TomTom–Mapbox HTTP CSV to [MediaStore.Downloads] (API 29+). */
+/** Export unified CSV / HERE span CSV / TomTom–Mapbox HTTP CSV to [MediaStore.Downloads] (API 29+). */
 class LogExportBridge(
     private val context: Context,
     engine: FlutterEngine,

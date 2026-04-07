@@ -4,8 +4,7 @@ import 'package:geolocator/geolocator.dart';
 
 import '../core/android_location_compat.dart';
 
-/// Mirrors Kotlin [GpsTrajectoryBuffer].
-// VERIFIED: 1:1 Logic match with Kotlin (bearing from [hasBearing], distance/bearing from Location geodesy).
+/// Short FIFO of recent fixes for trajectory bearing (device bearing when available, else geodesic).
 class GpsTrajectoryBuffer {
   GpsTrajectoryBuffer({this.capacity = 5});
 

@@ -1,6 +1,6 @@
 enum ConfidenceLevel { high, medium, low }
 
-/// Mirrors Kotlin [SpeedLimitData].
+/// Speed limit value from a provider (HERE, TomTom, Mapbox, Edge) with metadata.
 class SpeedLimitData {
   const SpeedLimitData({
     required this.provider,

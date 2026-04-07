@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../config/app_config.dart';
 import '../services/google_auth_service.dart';
 
-/// Mirrors Kotlin [GoogleSignInContent].
+/// Google sign-in entry screen for remote HERE / Supabase.
 class GoogleSignInScreen extends StatefulWidget {
   const GoogleSignInScreen({super.key});
 

@@ -1,19 +1,16 @@
-Speed Alert Pro — Supabase + Edge Function (Android Kotlin + Flutter)
-=======================================================================
+Speed Alert Pro — Supabase + Edge Function
+==========================================
 
-This folder mirrors the backend used by both **speed-alert-pro-android** and **speed-alert-pro-flutter**:
-**migrations/**, **functions/here-speed/**, and **config.toml** are the same Supabase project assets.
+This folder holds **migrations/**, **functions/here-speed/**, and **config.toml** for the hosted Supabase project.
 
-Run Supabase CLI commands from **this directory** (`speed-alert-pro-flutter/supabase`) or from the
-Android repo’s `supabase/` folder — deploy once per hosted project.
+Run Supabase CLI commands from **this directory** (`speed-alert-pro-flutter/supabase`) — deploy once per hosted project.
 
 0) Flutter app — keys and OAuth package name
    - Keys are passed with `--dart-define` (see project **README.md**), not `local.properties`.
    - Defaults live in `lib/config/app_config.dart` (`SUPABASE_URL`, `SUPABASE_ANON_KEY`, etc.).
    - For Google Sign-In on the **Flutter Android** build, add an OAuth **Android** client for package
      **com.example.speed_alert_pro** (see `android/app/build.gradle.kts` `applicationId`) and your
-     debug/release SHA-1. The Kotlin app may use **com.speedalertpro** — use the package that matches
-     the APK you install.
+     debug/release SHA-1. Use the package name that matches the APK you install (see `applicationId`).
 
 1) Create a Supabase project (https://supabase.com).
 
@@ -50,7 +47,7 @@ Android repo’s `supabase/` folder — deploy once per hosted project.
      supabase functions deploy here-speed --no-verify-jwt
    (JWT is verified inside the function via the user’s Bearer token.)
 
-5) Kotlin Android — local.properties (do not commit secrets to git):
+5) Optional — native Android `local.properties` (do not commit secrets to git):
    supabase.url=https://YOUR_REF.supabase.co
    supabase.anon.key=YOUR_KEY   (JWT anon or sb_publishable_… — if auth fails, use the legacy anon key from the dashboard)
    google.web.client.id=YOUR_WEB_CLIENT_ID.apps.googleusercontent.com

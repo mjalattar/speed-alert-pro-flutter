@@ -11,10 +11,7 @@ import android.util.Log
 import android.view.View
 import android.view.WindowManager
 
-/**
- * Kotlin [com.speedalertpro.OverlayPermission] — copied verbatim for Flutter MethodChannel parity
- * (1×1 overlay prime + OEM overlay intent fallbacks).
- */
+/** 1×1 overlay prime + OEM overlay settings intents for “draw over other apps”. */
 object OverlayPermissionBridge {
 
     private const val TAG = "OverlayPermission"

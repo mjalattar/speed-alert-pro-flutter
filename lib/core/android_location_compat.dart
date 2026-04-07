@@ -2,12 +2,11 @@ import 'dart:math' as math;
 
 import 'package:geolocator/geolocator.dart';
 
-/// Kotlin / Android [android.location.Location] behavior used by the driving pipeline
-/// (WGS84 geodesic distance + initial bearing, and [hasSpeed]/[hasBearing] semantics for [Position]).
+/// Android-style [android.location.Location] behavior for the driving pipeline
+/// (WGS84 geodesic distance + initial bearing, and speed/bearing availability heuristics for [Position]).
 ///
-/// Distance and bearing: port of AOSP [android.location.Location.computeDistanceAndBearing]
+/// Distance and bearing: AOSP [android.location.Location.computeDistanceAndBearing]
 /// (Vincenty inverse on the WGS84 ellipsoid — same as [Location.distanceBetween] / [Location.bearingTo]).
-// VERIFIED: 1:1 Logic match with Kotlin (calls Android Location geodesy APIs on the Kotlin side).
 class AndroidLocationCompat {
   AndroidLocationCompat._();
 
@@ -16,8 +15,8 @@ class AndroidLocationCompat {
   static const double _f = 1 / 298.257223563;
   static const int _maxIterations = 20;
 
-  /// Java [Long.MAX_VALUE] — Kotlin [LocationProcessor] moderate-turn cooldown sentinel.
-  static const int kotlinLongMaxValue = 9223372036854775807;
+  /// Java [Long.MAX_VALUE] — sentinel for “no prior moderate turn” in heading-invalidation cooldown logic.
+  static const int javaLongMaxValue = 9223372036854775807;
 
   /// [android.location.Location.distanceBetween] (meters).
   static double distanceBetweenMeters(
@@ -44,7 +43,6 @@ class AndroidLocationCompat {
   }
 
   /// AOSP [Location.computeDistanceAndBearing]: `out[0]` = m; `out[1]` = bearing1 °; `out[2]` = bearing2 °.
-  // VERIFIED: 1:1 Logic match with Kotlin (Android Location geodesy).
   static void computeDistanceAndBearing(
     double lat1,
     double lon1,
@@ -154,8 +152,7 @@ class AndroidLocationCompat {
     }
   }
 
-  /// Kotlin [Location.hasSpeed] for fused [Position] (Geolocator).
-  // VERIFIED: 1:1 Logic match with Kotlin pipeline expectations for speed availability.
+  /// Whether [Position.speed] should be treated as a reported speed (Geolocator vs [Location.hasSpeed]).
   static bool positionHasReportedSpeed(Position p) {
     if (p.isMocked) return true;
     if (p.speedAccuracy > 0) return true;
@@ -163,8 +160,7 @@ class AndroidLocationCompat {
     return false;
   }
 
-  /// Kotlin [Location.hasBearing] for fused [Position] (Geolocator).
-  // VERIFIED: 1:1 Logic match with Kotlin pipeline expectations for bearing availability.
+  /// Bearing in degrees when [Position.heading] should be treated as valid (Geolocator vs [Location.hasBearing]).
   static double? positionBearingIfHasBearing(Position p) {
     if (p.isMocked) {
       final h = p.heading;

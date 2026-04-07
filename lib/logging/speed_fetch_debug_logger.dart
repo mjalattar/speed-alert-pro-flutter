@@ -10,7 +10,7 @@ import 'speed_limit_api_request_logger.dart';
 
 export 'here_fetch_telemetry.dart';
 
-/// Kotlin [SpeedFetchDebugLogger].
+/// Append structured speed-fetch debug rows (CSV) for the active session.
 class SpeedFetchDebugLogger {
   SpeedFetchDebugLogger._();
 

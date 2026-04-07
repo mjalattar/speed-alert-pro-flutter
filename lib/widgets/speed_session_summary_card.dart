@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../core/constants.dart';
 
-/// Kotlin [MainActivity] speed / limit card — same speed/limit rules, flash animation, typography.
+/// Speed / limit summary card with compare columns and speeding flash animation.
 class SpeedSessionSummaryCard extends StatefulWidget {
   const SpeedSessionSummaryCard({
     super.key,
@@ -33,10 +33,10 @@ class SpeedSessionSummaryCard extends StatefulWidget {
 
 class _SpeedSessionSummaryCardState extends State<SpeedSessionSummaryCard>
     with SingleTickerProviderStateMixin {
-  /// Kotlin `epsilon` for floating compare on speeding.
+  /// Tolerance for floating-point speeding comparison.
   static const double _speedingEpsilon = 0.0001;
 
-  /// Kotlin `animateColorAsState` speeding branch: 1500ms reverse repeat.
+  /// Speeding flash: 1500ms reverse repeat.
   static const Duration _flashDuration = Duration(milliseconds: 1500);
 
   late final AnimationController _flashCtl;
@@ -75,7 +75,7 @@ class _SpeedSessionSummaryCardState extends State<SpeedSessionSummaryCard>
     super.dispose();
   }
 
-  /// Kotlin `speedMphForCard` / `isSpeeding` inputs.
+  /// Display speed: simulated mph on Testing+sim, zero on Testing idle, else live GPS mph.
   double _speedMphForCard() {
     if (widget.isTestingTab) {
       if (widget.isSimulating) {

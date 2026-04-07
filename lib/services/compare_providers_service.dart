@@ -30,7 +30,7 @@ String _httpErrorSnippet(String body, [int maxChars = 400]) {
   return '${body.substring(0, maxChars)}…';
 }
 
-/// Outcome of a TomTom / Mapbox compare fetch — mirrors Kotlin [CompareRouteFetchOutcome].
+/// Outcome of a TomTom / Mapbox compare fetch (parsed limit + optional section model).
 class CompareRouteFetchOutcome {
   CompareRouteFetchOutcome(this.data, this.sectionModel);
 
@@ -38,9 +38,9 @@ class CompareRouteFetchOutcome {
   final AnnotationSectionSpeedModel? sectionModel;
 }
 
-/// TomTom Snap + Mapbox Directions compare (mirrors Android [SpeedLimitAggregator] compare APIs).
+/// TomTom Snap + Mapbox Directions compare providers (comparison-only; not the HERE alert path).
 ///
-/// HTTP behavior matches [TomTomApiService] / [MapboxApiService] (OkHttp 30s connect+read, same headers).
+/// Uses 30s HTTP timeouts and provider-specific headers consistent with the native TomTom/Mapbox clients.
 class CompareProvidersService {
   CompareProvidersService({
     required this.preferencesManager,
@@ -50,23 +50,23 @@ class CompareProvidersService {
   final PreferencesManager preferencesManager;
   void Function()? onCacheChanged;
 
-  /// Kotlin [OkHttpClient] connectTimeout + readTimeout for TomTom/Mapbox clients.
+  /// HTTP connect + read timeout for TomTom/Mapbox clients.
   static const Duration _httpTimeout = Duration(seconds: 30);
 
-  /// Kotlin [TomTomApiService] / [MapboxApiService] OkHttp header [Interceptor].
+  /// Default request headers for TomTom REST calls.
   static const Map<String, String> _tomTomHttpHeaders = {
     'Accept': 'application/json',
     'User-Agent': 'SpeedAlertPro/1.0',
   };
 
-  /// Kotlin [MapboxApiService] POST: same headers as GET plus form [Content-Type].
+  /// Mapbox POST: JSON accept + form [Content-Type].
   static const Map<String, String> _mapboxPostHeaders = {
     'Accept': 'application/json',
     'User-Agent': 'SpeedAlertPro/1.0',
     'Content-Type': 'application/x-www-form-urlencoded',
   };
 
-  /// Kotlin [MapboxApiService] GET fallback (no form body).
+  /// Mapbox GET fallback (no form body).
   static const Map<String, String> _mapboxGetHeaders = {
     'Accept': 'application/json',
     'User-Agent': 'SpeedAlertPro/1.0',
@@ -98,7 +98,7 @@ class CompareProvidersService {
     return (_cachedTomTomCompare?.speedLimitMph, _cachedMapboxCompare?.speedLimitMph);
   }
 
-  /// Kotlin [SpeedLimitAggregator] compare cache read (progressive UI).
+  /// Latest cached TomTom compare row for progressive UI.
   SpeedLimitData? peekCachedTomTomCompare() => _cachedTomTomCompare;
 
   SpeedLimitData? peekCachedMapboxCompare() => _cachedMapboxCompare;
@@ -314,7 +314,7 @@ class CompareProvidersService {
     }
   }
 
-  /// Kotlin [SpeedLimitAggregator.disabledProviderData] — [source] is exactly `"Disabled in settings"`.
+  /// Disabled-provider placeholder; [source] is exactly `"Disabled in settings"`.
   static SpeedLimitData _disabledProviderData(String name) {
     return SpeedLimitData(
       provider: name,
@@ -404,7 +404,7 @@ class CompareProvidersService {
   }
 
   /// Second waypoint for Mapbox/TomTom Directions/Snap legs (~[kAlertRouteLeadMeters] along heading).
-  /// Local geometry only — does **not** call HERE or TomTom; same convention as Kotlin alert lead.
+  /// Local geometry only — does **not** call HERE or TomTom; matches the HERE alert lead convention.
   static String _compareRouteLeadDestination(
     double lat,
     double lng,
@@ -485,12 +485,12 @@ class CompareProvidersService {
       final o = Geo.offsetLatLngMeters(lat, lng, brg, alongM);
       pts.write('${o.lng.toStringAsFixed(7)},${o.lat.toStringAsFixed(7)}');
       hds.write(brg.toStringAsFixed(1));
-      // Kotlin: `val offsetMs = (totalMs * i / (n - 1))` — Long integer division, not float round-trip.
+      // Integer division for offset ms (avoid float round-trip).
       final offsetMs = n <= 1 ? 0 : (totalMs * i) ~/ (n - 1);
       final instant = t0.add(Duration(milliseconds: offsetMs));
       timestamps.write(instant.toIso8601String());
     }
-    // Retrofit [TomTomApiService.snapToRoadsGet]: all @Query params including defaults.
+    // TomTom Snap to Roads: include default query params (vehicle type, measurement system, etc.).
     final uri = Uri.https('api.tomtom.com', '/snapToRoads/1', {
       'key': AppConfig.tomtomApiKey.trim(),
       'points': pts.toString(),
@@ -509,7 +509,7 @@ class CompareProvidersService {
         headers: _tomTomHttpHeaders,
       ).timeout(_httpTimeout);
       if (res.statusCode != 200) {
-        // Kotlin [SpeedLimitAggregator]: Log.d on HttpException + body for debugging.
+        // Log non-200 body snippet for debugging.
         _speedLimitAggregatorLogD(
           'TomTom route snap HTTP ${res.statusCode}: ${_httpErrorSnippet(res.body)}',
         );
@@ -544,10 +544,10 @@ class CompareProvidersService {
       'alternatives': 'false',
     };
     if (br.$1 != null) q['bearings'] = br.$1!;
-    // Retrofit [MapboxApiService]: @Query on URL; @Field defaults on body (encoded=true for coordinates).
+    // Mapbox Directions: query params on URL; coordinates in POST body (see GET fallback below).
     final uri = Uri.parse('https://api.mapbox.com/directions/v5/mapbox/driving')
         .replace(queryParameters: q);
-    // Do not Uri.encodeComponent(coordStr): Kotlin @Field(encoded = true) — semicolons stay literal (Mapbox doc).
+    // Keep coordinates unencoded in the form body so semicolons stay literal (Mapbox API).
     final body =
         'coordinates=$coordStr&annotations=maxspeed&geometries=geojson&overview=full';
     try {
@@ -565,7 +565,7 @@ class CompareProvidersService {
       _speedLimitAggregatorLogD('Mapbox route POST: $e');
     }
     try {
-      // [MapboxApiService.getDirectionsJson] @Path(coordinates, encoded = true): raw lon,lat;lon,lat path.
+      // GET variant: raw `lon,lat;lon,lat` in the path (no extra encoding).
       final getUri = Uri.parse(
         'https://api.mapbox.com/directions/v5/mapbox/driving/$coordStr',
       ).replace(queryParameters: q);
@@ -599,7 +599,7 @@ class CompareProvidersService {
     return (b, radiuses);
   }
 
-  /// TomTom [TomTomApiService.SNAP_FIELDS_ROUTE_GEOMETRY_SPEED].
+  /// TomTom Snap `fields` mask for route geometry + speed limits.
   static const String _snapFieldsRouteGeometrySpeed =
       '{projectedPoints{type,geometry{type,coordinates},properties{routeIndex,snapResult}},'
       'route{type,geometry{type,coordinates},properties{id,speedLimits{value,unit,type}}}}';

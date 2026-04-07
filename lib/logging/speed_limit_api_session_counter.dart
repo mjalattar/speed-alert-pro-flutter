@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import 'speed_debug_log_auto_exporter.dart';
 
-/// Kotlin [SpeedLimitApiSessionCounter] — request counts per session.
+/// Driving / test session hooks for counting speed-related API usage.
 class SpeedLimitApiSessionCounter {
   SpeedLimitApiSessionCounter._();
 

@@ -7,10 +7,10 @@ import 'package:geolocator/geolocator.dart';
 import '../core/android_location_compat.dart';
 import '../core/android_system_clock.dart';
 
-/// Kotlin [SpeedLimitLoggingContext] — last GPS snapshot for CSV correlation.
+/// Last GPS snapshot fields for CSV correlation with speed-fetch rows.
 ///
 /// Fix age: when [androidElapsedRealtimeNanos] is set, [snapshotAsync] uses
-/// `(SystemClock.elapsedRealtimeNanos() - fixNs) / 1_000_000` like Kotlin [snapshot].
+/// `(elapsedRealtimeNanos - fixNs) / 1_000_000` on Android.
 class SpeedLimitLoggingContext {
   SpeedLimitLoggingContext._();
 
@@ -35,7 +35,7 @@ class SpeedLimitLoggingContext {
   static String _hereCompareMphCell = '';
   static String _hereAlertResolvePath = '';
 
-  /// Kotlin [elapsedRealtimeAtFixNs].
+  /// Android [SystemClock] nanoseconds at fix time when available.
   static int? _fixElapsedRealtimeNs;
 
   /// Session monotonic baseline when no Android nanos (iOS / desktop / channel failure before first fix).
@@ -128,8 +128,7 @@ class SpeedLimitLoggingContext {
     _hereAlertResolvePath = '';
   }
 
-  /// Kotlin [updateFromLocation].
-  // VERIFIED: 1:1 Logic match with Kotlin ([Location.distanceBetween], [hasBearing]/[hasSpeed] fields).
+  /// Updates odometer and last-fix fields from a [Position] (and optional Android monotonic anchor).
   static void updateFromPosition(
     Position location, {
     int? androidElapsedRealtimeNanos,
@@ -219,7 +218,7 @@ class SpeedLimitLoggingContext {
   }
 }
 
-/// Kotlin [SpeedLimitLoggingContext.Snapshot] (Dart name avoids clash with Riverpod).
+/// Immutable row of logging context for CSV emission (Dart name avoids clash with Riverpod).
 class LoggingSnapshot {
   const LoggingSnapshot({
     required this.hasFix,

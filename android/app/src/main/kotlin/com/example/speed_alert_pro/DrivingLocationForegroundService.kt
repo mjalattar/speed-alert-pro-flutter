@@ -19,7 +19,7 @@ import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 
 /**
- * Foreground service + Google Play Fused Location — Kotlin [SpeedAlertService.requestLocationUpdates] parity
+ * Foreground service + Google Play Fused Location
  * (200 ms interval, 100 ms min, 0 m displacement, high accuracy).
  */
 class DrivingLocationForegroundService : Service() {

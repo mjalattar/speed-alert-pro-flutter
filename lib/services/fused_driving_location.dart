@@ -1,9 +1,8 @@
-// PROJECT_STATUS: 100% VERIFIED_MIRROR
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 
-/// Android: Google Play **Fused Location** via foreground service — Kotlin [SpeedAlertService] parity.
+/// Android: Google Play **Fused Location** via foreground service (native bridge).
 class FusedDrivingLocation {
   FusedDrivingLocation._();
 
@@ -15,7 +14,7 @@ class FusedDrivingLocation {
     return _events.receiveBroadcastStream().map(_toPosition);
   }
 
-  /// Kotlin: fused pipeline may outlive [MainActivity] when [SpeedAlertService] stays started.
+  /// Whether the native fused foreground service is still running (can outlive the activity).
   static Future<bool> isForegroundServiceRunning() async {
     if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) return false;
     try {
@@ -44,7 +43,7 @@ class FusedDrivingLocation {
     }
   }
 
-  /// Kotlin [SpeedAlertService.onNormalModeBackgrounded] / [onNormalModeForegrounded] fused side.
+  /// Pause or resume fused updates when normal mode backgrounds/foregrounds the app.
   static Future<void> setPaused(bool paused) async {
     if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) return;
     try {
@@ -54,7 +53,7 @@ class FusedDrivingLocation {
     }
   }
 
-  /// Kotlin: ignore fused callbacks while road-test simulation runs.
+  /// When true, native side drops fused callbacks while road-test simulation runs.
   static Future<void> setSimulationActive(bool active) async {
     if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) return;
     try {
@@ -64,7 +63,7 @@ class FusedDrivingLocation {
     }
   }
 
-  /// Kotlin [DrivingLocationHub.locationToMap] — consumed with each fused [Position].
+  /// Stashed per-fix Android extras (elapsed realtime ns, provider) for the Dart pipeline.
   static int? _pendingElapsedRealtimeNs;
   static String _pendingProvider = '';
 

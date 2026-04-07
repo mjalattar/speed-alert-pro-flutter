@@ -1,7 +1,6 @@
 /// Shared CSV field escaping for debug logs.
 ///
-/// Kotlin [com.speedalertpro.CsvFormatting].
-// VERIFIED: 1:1 Logic match with Kotlin (quote doubling, wrap rules).
+/// CSV field escaping (RFC-style quoting and doubled quotes).
 class CsvFormatting {
   CsvFormatting._();
 

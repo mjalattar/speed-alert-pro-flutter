@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
-/// Kotlin [SystemClock] via [MainActivity] MethodChannel.
+/// Android [SystemClock] elapsed realtime via [MainActivity] MethodChannel.
 class AndroidSystemClock {
   AndroidSystemClock._();
 
@@ -21,7 +21,7 @@ class AndroidSystemClock {
     }
   }
 
-  /// Kotlin [SystemClock.elapsedRealtimeNanos] — same clock as [SpeedLimitLoggingContext] fix age.
+  /// Monotonic nanoseconds since boot; used with [SpeedLimitLoggingContext] fix age.
   static Future<int?> elapsedRealtimeNanos() async {
     if (kIsWeb || !Platform.isAndroid) return null;
     try {

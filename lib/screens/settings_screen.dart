@@ -128,7 +128,7 @@ class SettingsScreen extends ConsumerWidget {
             SwitchListTile(
               title: const Text('Overlay HUD minimized'),
               subtitle: const Text(
-                'Same as − on the Kotlin HUD: hide floating overlay until the app is foreground again.',
+                'Hide the floating overlay until the app is in the foreground again.',
               ),
               value: preferencesManager.isOverlayHudMinimized,
               onChanged: (v) {
@@ -204,7 +204,7 @@ class SettingsScreen extends ConsumerWidget {
                   const SnackBar(
                     content: Text(
                       'Add your Supabase URL to local.properties as '
-                      'supabase.url=https://YOUR-REF.supabase.co then rebuild (Kotlin), '
+                      'supabase.url=https://YOUR-REF.supabase.co then rebuild the native app, '
                       'or pass --dart-define=SUPABASE_URL=... for Flutter (see README).',
                     ),
                   ),
@@ -222,7 +222,7 @@ class SettingsScreen extends ConsumerWidget {
           SwitchListTile(
             title: const Text('Local speed stabilizer'),
             subtitle: const Text(
-              'Same gate as Kotlin: applies when not using remote Edge for HERE alerts.',
+              'Applies when not using remote Edge for HERE alerts.',
             ),
             value: preferencesManager.useLocalSpeedStabilizer,
             onChanged: (v) {
@@ -233,7 +233,7 @@ class SettingsScreen extends ConsumerWidget {
           SwitchListTile(
             title: const Text('Log speed fetches to file'),
             subtitle: const Text(
-              'Kotlin PreferencesManager.logSpeedFetchesToFile — unified CSV + HTTP rows when driving or simulating.',
+              'Unified CSV + HTTP request rows when driving or simulating.',
             ),
             value: preferencesManager.logSpeedFetchesToFile,
             onChanged: (v) {
@@ -255,7 +255,7 @@ class SettingsScreen extends ConsumerWidget {
           ),
           SwitchListTile(
             title: const Text('TomTom (compare)'),
-            subtitle: const Text('Same toggle as Kotlin PreferencesManager.'),
+            subtitle: const Text('Stored in shared preferences with other API toggles.'),
             value: preferencesManager.isTomTomApiEnabled,
             onChanged: (v) {
               preferencesManager.isTomTomApiEnabled = v;

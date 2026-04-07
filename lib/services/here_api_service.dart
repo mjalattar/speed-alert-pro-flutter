@@ -16,14 +16,14 @@ import '../models/here_alert_fetch_result.dart';
 import '../models/road_segment.dart';
 import '../models/speed_limit_data.dart';
 
-/// Flutter port of Kotlin Retrofit [HereApiService] — local HERE router.hereapi.com v8.
+/// Local HERE Routing API client ([router.hereapi.com](https://router.hereapi.com) v8).
 class HereApiService {
   HereApiService({required this.apiKey});
 
-  /// Kotlin [HereApiService.Companion.BASE_URL]
+  /// HERE router base URL.
   static const String baseUrl = 'https://router.hereapi.com/';
 
-  /// Kotlin [HereApiService.Companion.create]
+  /// Factory with explicit API key.
   static HereApiService create({required String apiKey}) =>
       HereApiService(apiKey: apiKey);
 
@@ -31,9 +31,9 @@ class HereApiService {
 
   static final Uri _routesUri = Uri.parse('${baseUrl}v8/routes');
 
-  /// Kotlin [MainActivity] simulation: one O–D `v8/routes` call — same JSON drives the map polyline
-  /// **and** [HereSectionSpeedModel] priming so [LocationProcessor] walks spans on the **same** geometry
-  /// as the mock vehicle (avoids a second alert-leg route that diverges and causes HERE refetch storms).
+  /// Road-test simulation: one O–D `v8/routes` call whose JSON drives the map polyline **and**
+  /// [HereSectionSpeedModel] priming so [LocationProcessor] walks spans on the **same** geometry as the
+  /// mock vehicle (avoids a divergent second alert-leg route and refetch storms).
   Future<({List<GeoCoordinate> geometry, HereSectionSpeedModel? sectionSpeedModel})?>
       fetchSimulationOdRouteWithSection({
     required String origin,
@@ -87,7 +87,7 @@ class HereApiService {
     return (geometry: geometry, sectionSpeedModel: parsed.sectionSpeedModel);
   }
 
-  /// Kotlin [SpeedLimitAggregator.fetchHereAlertWithStickySegment] — parsing after a decoded `v8/routes` body.
+  /// Parses alert limit, optional sticky segment, and section model from a decoded `v8/routes` body.
   ///
   /// [headingDegrees]: motion heading for polyline matching (weighted segment choice). When null,
   /// a **start-of-route** tangent is used only if [(lat,lng)] is within ~40 m of the first vertex.
@@ -180,7 +180,7 @@ class HereApiService {
     );
   }
 
-  /// Kotlin [HereApiService.getDiscover] — simulation preset 4 geocode when custom lat/lng blank.
+  /// HERE Discover geocode (e.g. simulation preset when custom lat/lng is blank).
   Future<({double lat, double lng})?> discoverFirstPosition({
     required String query,
     String at = '29.5445,-95.0205',
@@ -227,7 +227,7 @@ class HereApiService {
   }
 
   /// Virtual destination ~[kAlertRouteLeadMeters] ahead along [headingDegrees], when set.
-  /// Same construction as Kotlin alert route leg before [getSpeedLimit].
+  /// Used as the routing leg destination for local HERE speed-limit requests.
   String hereAlertDestination(
     double lat,
     double lng, {
@@ -245,7 +245,7 @@ class HereApiService {
     return '${lat + 0.00001},${lng + 0.00001}';
   }
 
-  /// Kotlin [HereApiService.getSpeedLimit] (routing v8 spans + polyline return).
+  /// Local HERE speed limit via routing v8 (spans + polyline return).
   Future<SpeedLimitData> getSpeedLimit({
     required double lat,
     required double lng,
@@ -321,7 +321,7 @@ class HereApiService {
     );
   }
 
-  /// Kotlin [SpeedLimitAggregator] local path [fetchHereAlertWithStickySegment].
+  /// Full HERE alert fetch: `v8/routes` request then [parseAlertFetchFromDecodedRoute].
   Future<HereAlertFetchResult> fetchHereAlertWithStickySegment({
     required double lat,
     required double lng,

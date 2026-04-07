@@ -8,8 +8,7 @@ import '../providers/app_providers.dart';
 import '../screens/google_sign_in_screen.dart';
 import '../screens/subscription_paywall_screen.dart';
 
-/// When [AppConfig.useRemoteHere]: Google sign-in (outer) then trial / RevenueCat (inner).
-/// Mirrors Kotlin [SupabaseGoogleSignInGate] + entitlement [LaunchedEffect] + [SubscriptionPaywallScreen].
+/// When [AppConfig.useRemoteHere]: Google sign-in (outer) then trial / RevenueCat paywall (inner).
 class AppRootGate extends ConsumerWidget {
   const AppRootGate({super.key, required this.child});
 

@@ -1,4 +1,3 @@
-// PROJECT_STATUS: 100% VERIFIED_MIRROR
 import '../config/app_config.dart';
 import '../core/geo.dart';
 import '../engine/geo_coordinate.dart';
@@ -10,8 +9,8 @@ import 'here_api_service.dart';
 import 'here_edge_function_client.dart';
 import 'preferences_manager.dart';
 
-/// Kotlin [Throwable.message] for `HERE API - Error: ${e.message}` parity.
-String kotlinThrowableMessage(Object e) {
+/// Returns [Exception.message] when present, otherwise [Object.toString].
+String throwableMessageOrToString(Object e) {
   try {
     final m = (e as dynamic).message;
     if (m != null) return m.toString();
@@ -19,15 +18,15 @@ String kotlinThrowableMessage(Object e) {
   return e.toString();
 }
 
-/// Kotlin [SpeedLimitAggregator]: **HERE Maps is the only producer for driving alerts** ([LocationProcessor]).
+/// Aggregates speed-limit data. **HERE Maps is the only producer for driving alerts** ([LocationProcessor]).
 ///
 /// TomTom and Mapbox are **comparison consumers** only — [CompareProvidersService] + [AnnotationSectionSpeedModel]
 /// along-polyline tiling. Their [SpeedLimitData] rows must never be treated as the posted limit for
 /// [LocationProcessor.onSpeedUpdate] / audible alerts; only HERE-derived values flowing through
 /// [fetchHereForAlerts] and the processor’s debounced resolution establish that limit.
 ///
-/// [fetchAllSpeedLimitsProgressive] never calls TomTom/Mapbox over the network; it mirrors Kotlin by replaying
-/// the compare cache filled by [LocationProcessor] (same triple-lock fetch architecture as Kotlin).
+/// [fetchAllSpeedLimitsProgressive] never calls TomTom/Mapbox over the network; it replays the compare cache
+/// filled by [LocationProcessor] (triple-lock fetch architecture).
 class SpeedLimitAggregator {
   SpeedLimitAggregator({
     required this.preferencesManager,
@@ -41,7 +40,7 @@ class SpeedLimitAggregator {
   final HereEdgeFunctionClient? hereEdgeFunctionClient;
   final CompareProvidersService compare;
 
-  /// Kotlin [SpeedLimitAggregator.edgeOrNull].
+  /// Returns the Edge client when remote speed API is enabled, else null.
   HereEdgeFunctionClient? _edgeOrNull() {
     if (!preferencesManager.useRemoteSpeedApi) return null;
     return hereEdgeFunctionClient;
@@ -61,10 +60,10 @@ class SpeedLimitAggregator {
         source: 'Not fetched yet',
       );
 
-  /// Kotlin [SpeedLimitAggregator.fetchAllSpeedLimitsProgressive].
+  /// Streams HERE (optional), then TomTom and Mapbox rows for progressive UI.
   ///
-  /// Delivers rows in order: optional **primary HERE** (live [fetchHereMapsOnly] — Kotlin [fetchHereSpeedLimit]
-  /// surface for this UI), then **TomTom** and **Mapbox** from the compare sticky cache only (no compare HTTP).
+  /// Delivers rows in order: optional **primary HERE** (live [fetchHereMapsOnly]), then **TomTom** and **Mapbox**
+  /// from the compare sticky cache only (no compare HTTP).
   ///
   /// Use [isPrimaryHereProducer] to separate the authoritative HERE row from comparison-only rows.
   Future<void> fetchAllSpeedLimitsProgressive({
@@ -99,7 +98,7 @@ class SpeedLimitAggregator {
     onEach(mbData, isPrimaryHereProducer: false);
   }
 
-  /// Kotlin [SpeedLimitAggregator.fetchHereMapsOnly].
+  /// HERE-only fetch for map / non-alert surfaces (Edge or local REST).
   Future<SpeedLimitData> fetchHereMapsOnly({
     required double lat,
     required double lng,
@@ -131,7 +130,7 @@ class SpeedLimitAggregator {
           provider: 'HERE Maps',
           speedLimitMph: null,
           confidence: ConfidenceLevel.low,
-          source: 'HERE API - Error: ${kotlinThrowableMessage(e)}',
+          source: 'HERE API - Error: ${throwableMessageOrToString(e)}',
         );
       }
     }
@@ -158,13 +157,13 @@ class SpeedLimitAggregator {
         provider: 'HERE Maps',
         speedLimitMph: null,
         confidence: ConfidenceLevel.low,
-        source: 'HERE API - Error: ${kotlinThrowableMessage(e)}',
+        source: 'HERE API - Error: ${throwableMessageOrToString(e)}',
       );
     }
   }
 
-  /// Kotlin [SpeedLimitAggregator.fetchHereForAlerts] — **sole** network entry used by [LocationProcessor]
-  /// for alert/sticky/section-walk resolution ([HereAlertFetchResult]). TomTom/Mapbox are not invoked here.
+  /// **Sole** network entry used by [LocationProcessor] for alert/sticky/section-walk resolution
+  /// ([HereAlertFetchResult]). TomTom/Mapbox are not invoked here.
   Future<HereAlertFetchResult> fetchHereForAlerts({
     required double lat,
     required double lng,
@@ -206,7 +205,7 @@ class SpeedLimitAggregator {
             provider: 'HERE Maps',
             speedLimitMph: null,
             confidence: ConfidenceLevel.low,
-            source: 'HERE API - Error: ${kotlinThrowableMessage(e)}',
+            source: 'HERE API - Error: ${throwableMessageOrToString(e)}',
           ),
         );
       }
@@ -237,14 +236,14 @@ class SpeedLimitAggregator {
           provider: 'HERE Maps',
           speedLimitMph: null,
           confidence: ConfidenceLevel.low,
-          source: 'HERE API - Error: ${kotlinThrowableMessage(e)}',
+          source: 'HERE API - Error: ${throwableMessageOrToString(e)}',
         ),
       );
     }
   }
 }
 
-/// Kotlin [SpeedLimitAggregator.buildEdgeFallbackStickySegment].
+/// Builds a short backward sticky segment when Edge returns mph but no geometry.
 RoadSegment? buildEdgeFallbackStickySegment(
   double lat,
   double lng,

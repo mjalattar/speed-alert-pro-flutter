@@ -6,7 +6,7 @@ import 'speed_alert_log_filesystem.dart';
 import 'speed_debug_log_session.dart';
 import 'speed_limit_api_request_logger.dart';
 
-/// Kotlin [SpeedDebugLogRouter].
+/// Selects which on-disk log session (driving vs simulation) is active.
 class SpeedDebugLogRouter {
   SpeedDebugLogRouter._();
 

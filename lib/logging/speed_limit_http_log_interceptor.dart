@@ -8,7 +8,7 @@ import 'logging_globals.dart';
 import 'speed_limit_api_request_logger.dart';
 import 'speed_limit_api_session_counter.dart';
 
-/// Kotlin [SpeedLimitHttpLogInterceptor] — records speed-related HTTP when logging is on.
+/// Wraps HTTP GET/POST for speed-related APIs and records bodies when logging is enabled.
 class SpeedLimitHttpLogInterceptor {
   SpeedLimitHttpLogInterceptor._();
 

@@ -4,7 +4,7 @@ import 'package:path_provider/path_provider.dart';
 
 import 'speed_debug_log_session.dart';
 
-/// App log directory — mirrors Kotlin `Context.getExternalFilesDir(null) ?: filesDir`.
+/// App log directory (external storage when available, else application support).
 class SpeedAlertLogFilesystem {
   SpeedAlertLogFilesystem._();
 
@@ -24,7 +24,7 @@ class SpeedAlertLogFilesystem {
     _root = ext ?? await getApplicationSupportDirectory();
   }
 
-  /// Kotlin [SpeedLimitApiRequestLogger.unifiedLogStorageFileName]
+  /// Basename for the unified CSV for [session].
   static String unifiedLogStorageFileName(SpeedDebugLogSession session) {
     switch (session) {
       case SpeedDebugLogSession.simulation:

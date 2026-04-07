@@ -5,8 +5,7 @@ import '../engine/geo_coordinate.dart';
 /// Spec mapping: [linkId] = span / stable key, [speedLimitMph] = posted limit, [geometry] = polyline,
 /// [bearingDeg] = average road heading, [expiresAtMillis] = cache expiry (~30 min).
 ///
-/// Kotlin [com.speedalertpro.RoadSegment].
-// VERIFIED: 1:1 Logic match with Kotlin ([isExpired] vs [System.currentTimeMillis]).
+/// Cached HERE sticky segment with expiry wall time.
 class RoadSegment {
   RoadSegment({
     required this.linkId,
@@ -24,7 +23,7 @@ class RoadSegment {
   final int expiresAtMillis;
   final int? functionalClass;
 
-  /// Kotlin `fun isExpired(nowMillis: Long = System.currentTimeMillis())`.
+  /// Whether [expiresAtMillis] is reached (defaults to `DateTime.now()` if [nowMillis] omitted).
   bool isExpired([int? nowMillis]) =>
       (nowMillis ?? DateTime.now().millisecondsSinceEpoch) >= expiresAtMillis;
 }

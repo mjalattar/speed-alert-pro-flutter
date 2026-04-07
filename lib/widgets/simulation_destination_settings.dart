@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/app_providers.dart';
 import '../services/preferences_manager.dart';
 
-/// Kotlin Settings “Simulation destination” radios + fields ([MainActivity] settings sheet).
+/// Settings UI for simulation destination presets and custom origin/destination fields.
 class SimulationDestinationSettings extends ConsumerStatefulWidget {
   const SimulationDestinationSettings({super.key});
 

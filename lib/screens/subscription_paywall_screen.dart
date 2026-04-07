@@ -5,7 +5,7 @@ import '../config/app_config.dart';
 import '../core/entitlement_ids.dart';
 import '../services/purchases_ext.dart';
 
-/// Mirrors Kotlin [SubscriptionPaywallScreen].
+/// RevenueCat subscription / restore UI for premium unlock.
 class SubscriptionPaywallScreen extends StatefulWidget {
   const SubscriptionPaywallScreen({
     super.key,
@@ -94,7 +94,7 @@ class _SubscriptionPaywallScreenState extends State<SubscriptionPaywallScreen> {
     } catch (e) {
       setState(() {
         _busy = false;
-        // Kotlin: `errorText = e.message` ([IllegalStateException] from [PurchasesExt]).
+        // [PurchasesExt] surfaces failures as [StateError] with a short message.
         _error = e is StateError
             ? e.message
             : (e is Exception ? e.toString() : '$e');

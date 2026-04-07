@@ -1,6 +1,3 @@
-// PROJECT_STATUS: 100% VERIFIED_MIRROR
-// Phase 5: Fused FG service + prefs [flutterDrivingTrackingActive] mirror Kotlin service surviving Activity death.
-
 import 'dart:async';
 import 'dart:developer' as developer;
 
@@ -26,11 +23,11 @@ import '../logging/speed_limit_api_session_counter.dart';
 import '../core/app_foreground_tracker.dart';
 import 'app_providers.dart';
 
-/// Kotlin [SpeedAlertService] — single owner of driving location stream, [LocationProcessor],
-/// overlay hooks, and alert audio policy. Widgets only observe [drivingSessionProvider]; they must not
-/// reorder “location → pipeline → UI” relative to this notifier.
+/// Single owner of the driving location stream, [LocationProcessor], overlay hooks, and alert audio policy.
+/// Widgets only observe [drivingSessionProvider]; they must not reorder “location → pipeline → UI”
+/// relative to this notifier.
 ///
-/// Latest simulated fix for the Testing map (Kotlin [currentLocation] → marker + camera).
+/// Latest simulated fix for the Testing map (marker + camera anchor).
 final simulationMapAnchorProvider =
     StateProvider<({double lat, double lng})?>((ref) => null);
 
@@ -64,16 +61,16 @@ class DrivingSessionState {
   final int? tomTomCompareMph;
   final int? mapboxCompareMph;
 
-  /// Synthetic route sim speed (Kotlin [MockLocationTester] +/- adjustment).
+  /// Synthetic route simulation speed ([MockLocationTester] +/- adjustment).
   final int simulatedSpeedMph;
 
   /// Increments on each HERE pipeline callback while driving (not simulating).
   final int drivingSessionPipelineUpdates;
 
-  /// Decoded HERE route for map polyline (Kotlin [routePoints] / [PolylineDecoder.decode]).
+  /// Decoded HERE route for map polyline.
   final List<GeoCoordinate> simulationRoutePolyline;
 
-  /// Kotlin [SpeedAlertService._currentLocation] / [updateLocation] — set **before** [LocationProcessor.processNewLocation].
+  /// Last fix coordinates; set **before** [LocationProcessor.processNewLocation].
   final double? lastFixLat;
   final double? lastFixLng;
 
@@ -153,10 +150,10 @@ class DrivingSessionNotifier extends StateNotifier<DrivingSessionState> {
     return true;
   }
 
-  /// Kotlin [MainActivity] [Lifecycle.Event.ON_RESUME] / [ON_PAUSE] / [ON_STOP] via Flutter lifecycle:
-  /// - [AppLifecycleState.resumed] → visible (ON_RESUME).
-  /// - [AppLifecycleState.paused] / [hidden] → not visible (ON_PAUSE / ON_STOP).
-  /// - [AppLifecycleState.inactive] → **no change** (transient; e.g. notification shade — matches Activity staying resumed).
+  /// Maps Flutter app lifecycle to main-activity visibility for pipeline pause/overlay gating.
+  /// - [AppLifecycleState.resumed] → visible.
+  /// - [AppLifecycleState.paused] / [hidden] → not visible.
+  /// - [AppLifecycleState.inactive] → **no change** (transient; e.g. notification shade).
   /// - [AppLifecycleState.detached] → not visible (process teardown).
   void syncAppLifecycle(AppLifecycleState lifecycle) {
     final bool visible;
@@ -207,8 +204,8 @@ class DrivingSessionNotifier extends StateNotifier<DrivingSessionState> {
     );
   }
 
-  /// Kotlin [SpeedAlertService.checkSpeedAlert] — same if/else sequence and predicates (incl. `hasLimit` OK branch).
-  void _checkSpeedAlertLikeKotlin(double speedMph, double? limitMph) {
+  /// Audible alert, logging, and overlay sync from current speed and posted limit.
+  void _checkSpeedAlert(double speedMph, double? limitMph) {
     final pm = ref.read(preferencesProvider).preferencesManager;
     final inForeground = ref.read(appForegroundVisibleProvider);
     final threshold = pm.alertThresholdMph;
@@ -234,13 +231,13 @@ class DrivingSessionNotifier extends StateNotifier<DrivingSessionState> {
     developer.log(
       'checkSpeedAlert: speed=$speedMph, limit=$lim, threshold=$threshold, '
       'mode=$mode, inFg=$inForeground, speeding=$isSpeeding, audible=${pm.isAudibleAlertEnabled}',
-      name: 'SpeedAlertService',
+      name: 'DrivingSession',
     );
 
     if (shouldPlayAudible) {
       developer.log(
         'ALERT: Speed $speedMph mph > Limit $lim + Threshold $threshold',
-        name: 'SpeedAlertService',
+        name: 'DrivingSession',
       );
       unawaited(
         SpeedAlertSoundPlatform.playDebouncedIfEligible(
@@ -251,7 +248,7 @@ class DrivingSessionNotifier extends StateNotifier<DrivingSessionState> {
     } else if (hasLimit) {
       developer.log(
         'OK: Speed $speedMph mph <= Limit $lim + Threshold $threshold',
-        name: 'SpeedAlertService',
+        name: 'DrivingSession',
       );
     }
 
@@ -266,8 +263,8 @@ class DrivingSessionNotifier extends StateNotifier<DrivingSessionState> {
     );
   }
 
-  /// [countDrivingApiSession]: false when pipeline is started only for Testing simulation — Kotlin
-  /// does not run [onDrivingSessionStarted] until [ACTION_START_DRIVING_TRACK].
+  /// [countDrivingApiSession]: false when the pipeline is started only for Testing simulation
+  /// (no full driving-session API counter bump).
   Future<void> startTracking({bool countDrivingApiSession = true}) async {
     if (!await _ensureLocationPermission()) {
       if (_useAndroidFused()) {
@@ -311,7 +308,7 @@ class DrivingSessionNotifier extends StateNotifier<DrivingSessionState> {
                 )
               : state.hereData,
         );
-        _checkSpeedAlertLikeKotlin(vehicleMph, limitMph);
+        _checkSpeedAlert(vehicleMph, limitMph);
       },
     );
     _processor!.markDrivingSessionStarted();
@@ -348,7 +345,7 @@ class DrivingSessionNotifier extends StateNotifier<DrivingSessionState> {
     }
   }
 
-  /// After DKA / engine recreate: if native fused service still runs, rebuild Dart pipeline (Kotlin rebind).
+  /// After DKA / engine recreate: if native fused service still runs, rebuild the Dart pipeline.
   Future<void> restoreAndroidFusedSessionIfNeeded() async {
     if (!_useAndroidFused()) return;
     if (state.isTracking) return;
@@ -364,7 +361,7 @@ class DrivingSessionNotifier extends StateNotifier<DrivingSessionState> {
   }
 
   /// Road-test style simulation: fetch HERE route (Edge or local), then [MockLocationTester]-style fixes.
-  /// Does not require “Start driving” first — starts tracking if needed (Kotlin [MainActivity] parity).
+  /// Does not require “Start driving” first — starts tracking if needed.
   Future<void> startRouteSimulation() async {
     state = state.copyWith(lastError: null);
 
@@ -450,7 +447,7 @@ class DrivingSessionNotifier extends StateNotifier<DrivingSessionState> {
   }
 
   void adjustSimulatedSpeed(int deltaMph) {
-    // Kotlin [MainActivity] onAdjustSpeed: simulatedSpeed += delta (no clamp).
+    // Unclamped increment (matches HUD +/- behavior).
     state = state.copyWith(simulatedSpeedMph: state.simulatedSpeedMph + deltaMph);
   }
 
@@ -564,7 +561,7 @@ class DrivingSessionNotifier extends StateNotifier<DrivingSessionState> {
     }
   }
 
-  /// Kotlin [SpeedAlertService.updateLocation]: last fix on state, then [LocationProcessor.processNewLocation].
+  /// Updates last fix on state, then [LocationProcessor.processNewLocation].
   void _deliverPositionToProcessor(
     Position pos, {
     int? androidElapsedRealtimeNanos,
@@ -587,7 +584,7 @@ class DrivingSessionNotifier extends StateNotifier<DrivingSessionState> {
   @override
   void dispose() {
     _mockLocationTester.cancel();
-    // Kotlin: [SpeedAlertService] can outlive [MainActivity]; do not decrement API session counter here.
+    // Fused service can outlive the activity; do not decrement API session counter here.
     if (state.isTracking) {
       SpeedDebugLogRouter.stopDrivingSession();
     }
@@ -608,7 +605,7 @@ class DrivingSessionNotifier extends StateNotifier<DrivingSessionState> {
   static bool _useAndroidFused() =>
       !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
 
-  /// Foreground service notification on Android (parity with Kotlin fused updates in background).
+  /// Location stream settings; on Android includes foreground service notification for background updates.
   static LocationSettings _buildLocationSettings() {
     if (kIsWeb) {
       return const LocationSettings(
@@ -616,7 +613,7 @@ class DrivingSessionNotifier extends StateNotifier<DrivingSessionState> {
         distanceFilter: 0,
       );
     }
-    // Kotlin [SpeedAlertService.requestLocationUpdates]: interval 200ms, min 100ms, 0m displacement.
+    // High-rate updates: interval 200ms, min 100ms, 0m displacement.
     if (defaultTargetPlatform == TargetPlatform.android) {
       return AndroidSettings(
         accuracy: LocationAccuracy.bestForNavigation,

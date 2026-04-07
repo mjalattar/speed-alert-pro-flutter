@@ -3,14 +3,14 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
-/// Kotlin [com.speedalertpro.OverlayPermission] — 1×1 overlay prime + OEM overlay settings intents.
+/// Android overlay permission: 1×1 prime window + OEM “display over other apps” settings intents.
 class OverlayPermissionPlatform {
   OverlayPermissionPlatform._();
 
   static const MethodChannel _ch =
       MethodChannel('speed_alert_pro/overlay_permission');
 
-  /// Kotlin [OverlayPermission.primeAttemptAndOpenManageScreen].
+  /// Prime overlay permission and open system overlay settings when needed.
   static Future<void> primeAttemptAndOpenManageScreen() async {
     if (kIsWeb || !Platform.isAndroid) return;
     try {
@@ -20,7 +20,7 @@ class OverlayPermissionPlatform {
     }
   }
 
-  /// Kotlin [OverlayPermission.openManageOverlayScreen].
+  /// Open system overlay permission settings.
   static Future<void> openManageOverlayScreen() async {
     if (kIsWeb || !Platform.isAndroid) return;
     try {

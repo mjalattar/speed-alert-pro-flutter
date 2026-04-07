@@ -11,7 +11,7 @@ import 'speed_debug_log_session.dart';
 import 'speed_limit_logging_context.dart';
 import 'log_export_platform.dart';
 
-/// Kotlin [SpeedLimitApiRequestLogger].
+/// Unified CSV log of HTTP speed-limit related requests and compare diagnostics.
 class SpeedLimitApiRequestLogger {
   SpeedLimitApiRequestLogger._();
 
@@ -589,7 +589,7 @@ class SpeedLimitApiRequestLogger {
     });
   }
 
-  /// Kotlin [copySessionRequestsToPublicDownloads] — Android uses MediaStore via platform channel.
+  /// Copies the session CSV to public Downloads on Android (MediaStore via platform channel).
   static Future<String?> copySessionRequestsToPublicDownloads(
     SpeedDebugLogSession session,
   ) async {
@@ -603,7 +603,7 @@ class SpeedLimitApiRequestLogger {
   }
 }
 
-/// Shared UTC formatter for loggers (Kotlin [SpeedFetchDebugLogger.utcNow]).
+/// Shared `YYYY-MM-DDThh:mm:ss.sssZ` UTC formatter for loggers.
 class SpeedFetchDebugLoggerUtc {
   SpeedFetchDebugLoggerUtc._();
 

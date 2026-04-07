@@ -1,4 +1,4 @@
-/// Mirrors Kotlin [SpeedStabSample] + [SpeedLimitStabilizer].
+/// One stabilized speed sample (segment key + mph).
 class SpeedStabSample {
   const SpeedStabSample({this.segmentKey, required this.mph});
 
@@ -6,7 +6,7 @@ class SpeedStabSample {
   final int mph;
 }
 
-/// Smooths local HERE speed-limit samples (same rules as Kotlin).
+/// Rolling-window median-style smoother for local HERE mph samples.
 class SpeedLimitStabilizer {
   SpeedLimitStabilizer({int windowSize = defaultWindow})
       : _windowSize = windowSize;

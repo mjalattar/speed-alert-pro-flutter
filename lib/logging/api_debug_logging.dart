@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
 
-/// Kotlin [ApiDebugLogging] — logcat-style lines in debug.
+/// Debug-only tagged lines to the console.
 class ApiDebugLogging {
   ApiDebugLogging._();
 

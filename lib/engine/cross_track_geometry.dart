@@ -5,12 +5,11 @@ import '../models/road_segment.dart';
 import 'geo_bearing.dart';
 import 'geo_coordinate.dart';
 
-/// Mirrors Kotlin [CrossTrackGeometry].
-// VERIFIED: 1:1 Logic match with Kotlin ([Location.distanceTo] via [AndroidLocationCompat]).
+/// Cross-track distance, along-polyline distance, and projection helpers for HERE/compare geometry.
 ///
-/// [projectOntoPolylineForMatching] / [alongPolylineMetersForMatching] extend parity with
-/// **heading-weighted** segment choice when [userHeadingDeg] is set — reduces wrong-span picks on
-/// parallel roads / forks without HERE Route Matching API.
+/// [projectOntoPolylineForMatching] / [alongPolylineMetersForMatching] support **heading-weighted**
+/// segment choice when [userHeadingDeg] is set — reduces wrong-span picks on parallel roads / forks
+/// without HERE Route Matching API.
 class CrossTrackGeometry {
   CrossTrackGeometry._();
 
@@ -224,7 +223,7 @@ class CrossTrackGeometry {
     return true;
   }
 
-  /// Mirrors Kotlin [CrossTrackGeometry.isUserOnSegment].
+  /// Whether the user position is on the segment polyline within cross-track and heading gates.
   static bool isUserOnSegment(
     double userLat,
     double userLng,

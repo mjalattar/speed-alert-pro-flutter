@@ -9,7 +9,7 @@ import '../core/entitlement_ids.dart';
 import 'preferences_manager.dart';
 import 'purchases_ext.dart';
 
-/// Mirrors Android [EntitlementRepository.hasPremiumAccess].
+/// Trial window + RevenueCat premium entitlement.
 class EntitlementRepository {
   EntitlementRepository._();
 

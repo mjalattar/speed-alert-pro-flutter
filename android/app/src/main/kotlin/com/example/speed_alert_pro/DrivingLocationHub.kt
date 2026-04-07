@@ -8,7 +8,7 @@ import io.flutter.plugin.common.EventChannel
 
 /**
  * Bridges Fused Location results to Flutter [EventChannel] on the main thread.
- * Kotlin [SpeedAlertService] parity: skip delivery while simulating or when fused paused (Normal + background).
+ * Skips delivery while simulating or when fused updates are paused (normal + background modes).
  */
 object DrivingLocationHub {
     private val mainHandler = Handler(Looper.getMainLooper())

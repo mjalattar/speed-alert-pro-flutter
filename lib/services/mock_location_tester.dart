@@ -5,10 +5,9 @@ import 'package:geolocator/geolocator.dart';
 import '../core/android_location_compat.dart';
 import '../engine/geo_coordinate.dart';
 
-/// Flutter port of Kotlin [MockLocationTester] — interpolated fixes along route vertices.
-// VERIFIED: 1:1 Logic match with Kotlin (segment [distanceTo]/[bearingTo], emit then [delay] 100 ms).
+/// Emits interpolated [Position] fixes along route vertices for road-test simulation.
 class MockLocationTester {
-  /// Kotlin [MockLocationTester.SIMULATION_LOCATION_UPDATE_INTERVAL_MS]
+  /// Delay between simulated fixes (ms).
   static const int SIMULATION_LOCATION_UPDATE_INTERVAL_MS = 100;
 
   bool _simulating = false;
@@ -18,7 +17,7 @@ class MockLocationTester {
     _simulating = false;
   }
 
-  /// [speedMph] read each tick so +/- buttons apply mid-run (Kotlin [updateSimulatedSpeed]).
+  /// [speedMph] is read each tick so +/- adjustments apply mid-run.
   void start({
     required List<GeoCoordinate> routePoints,
     required double Function() speedMph,

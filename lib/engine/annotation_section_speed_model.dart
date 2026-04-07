@@ -14,8 +14,7 @@ const double _alongEpsM = 0.5;
 const double _vehicleAnchorAlongMaxM = 55.0;
 
 /// Speed limits tiled along a polyline (Mapbox `annotation.maxspeed` or TomTom Snap `route[]`).
-/// Mirrors Kotlin [AnnotationSectionSpeedModel].
-// VERIFIED: 1:1 Logic match with Kotlin (segment lengths via [Location.distanceTo] → [AndroidLocationCompat]).
+/// Segment lengths use WGS84 geodesics via [AndroidLocationCompat].
 class AnnotationSectionSpeedModel {
   AnnotationSectionSpeedModel._({
     required this.geometry,
