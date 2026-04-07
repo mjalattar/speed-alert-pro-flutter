@@ -21,4 +21,5 @@ build/
 
 # Secrets
 .env
+assets/env/.env
 *.jks

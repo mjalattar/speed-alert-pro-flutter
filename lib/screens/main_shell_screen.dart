@@ -9,7 +9,8 @@ import 'home_screen.dart';
 import 'settings_screen.dart';
 import 'testing_screen.dart';
 
-/// Root shell: tab **0 = Testing**, **1 = Driving**; switching tabs stops the other mode’s session.
+/// Root shell: tab **0 = Testing**, **1 = Driving**.
+/// Leaving **Driving** for Testing stops tracking; simulation can continue while you view Driving.
 class MainShellScreen extends ConsumerStatefulWidget {
   const MainShellScreen({super.key});
 
@@ -89,12 +90,8 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen>
           if (i == 0 && prev == 1) {
             unawaited(notifier.stopTracking());
           }
-          // Leaving Testing for Driving: stop simulation if running.
-          if (i == 1 &&
-              prev == 0 &&
-              ref.read(drivingSessionProvider).isSimulating) {
-            unawaited(notifier.stopRouteSimulation());
-          }
+          // Do not stop simulation when opening Driving — simulation runs on the same session;
+          // Home shows "Simulation running" while [isSimulating] stays true.
         },
         destinations: const [
           NavigationDestination(

@@ -8,6 +8,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'app/speed_alert_application_bootstrap.dart';
 import 'app/speed_alert_app.dart';
 import 'config/app_config.dart';
+import 'config/load_app_env.dart';
 import 'logging/logging_globals.dart';
 import 'logging/speed_alert_log_filesystem.dart';
 import 'providers/app_providers.dart';
@@ -20,6 +21,8 @@ import 'services/preferences_manager.dart';
 /// (see [DrivingSessionNotifier.startTracking]).
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  await loadAppEnv();
 
   await SpeedAlertLogFilesystem.init();
 

@@ -1,37 +1,35 @@
-/// Build-time configuration (`String.fromEnvironment` / `--dart-define`).
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+
+/// Runtime and build-time configuration.
 ///
-/// Defaults match the Speed Alert Pro Android project. Override any value with
-/// `--dart-define=KEY=value` for CI/production without editing source.
+/// **Precedence:** non-empty `--dart-define=KEY=value` (CI/production) overrides
+/// [dotenv] values loaded by [loadAppEnv] from `assets/env/.env` + `assets/env/env.example`.
+///
+/// No secrets are committed in source; copy `assets/env/env.example` to `assets/env/.env` locally.
 class AppConfig {
   AppConfig._();
 
+  static String _env(String key, String dartDefineName) {
+    final fromDefine = String.fromEnvironment(dartDefineName);
+    if (fromDefine.isNotEmpty) return fromDefine;
+    if (!dotenv.isInitialized) return '';
+    return dotenv.env[key]?.trim() ?? '';
+  }
+
   /// Project URL (Dashboard → Project Settings → API).
-  static const String supabaseUrl = String.fromEnvironment(
-    'SUPABASE_URL',
-    defaultValue: 'https://kwcupbvwsmubsixciorg.supabase.co',
-  );
+  static String get supabaseUrl => _env('SUPABASE_URL', 'SUPABASE_URL');
 
-  static const String supabaseAnonKey = String.fromEnvironment(
-    'SUPABASE_ANON_KEY',
-    defaultValue: 'sb_publishable_VPhal2dHGSrc94Dg69g2kA_rjuAwNmK',
-  );
+  static String get supabaseAnonKey => _env('SUPABASE_ANON_KEY', 'SUPABASE_ANON_KEY');
 
-  static const String revenueCatPublicApiKey = String.fromEnvironment(
-    'REVENUECAT_PUBLIC_API_KEY',
-    defaultValue: 'test_vwAfOZPwLoAuWxenWkDCmBZAGUU',
-  );
+  static String get revenueCatPublicApiKey =>
+      _env('REVENUECAT_PUBLIC_API_KEY', 'REVENUECAT_PUBLIC_API_KEY');
 
   /// HERE Routing / Discover REST key.
-  static const String hereApiKey = String.fromEnvironment(
-    'HERE_API_KEY',
-    defaultValue: 'vSXMWQK3pVRDDNLuvzcSUdzH5QJ7KMjCdeqvzQGNU-8',
-  );
+  static String get hereApiKey => _env('HERE_API_KEY', 'HERE_API_KEY');
 
   /// Google Maps SDK / Directions (same key type as Android `google.maps.api.key`).
-  static const String googleMapsApiKey = String.fromEnvironment(
-    'GOOGLE_MAPS_API_KEY',
-    defaultValue: 'AIzaSyBpMib5jhVaz9qB_YGMOWTNqcd-5uKz1Dw',
-  );
+  static String get googleMapsApiKey =>
+      _env('GOOGLE_MAPS_API_KEY', 'GOOGLE_MAPS_API_KEY');
 
   /// **Web application** OAuth 2.0 client ID (Google Cloud → APIs & Services → Credentials).
   ///
@@ -39,26 +37,15 @@ class AppConfig {
   /// Do **not** use the Android/iOS OAuth client ID here — those belong only in Google Cloud
   /// (package name + SHA-1 for Android). The JSON download for Android often shows `"installed"`
   /// with a different client id; that is not this value.
-  static const String googleWebClientId = String.fromEnvironment(
-    'GOOGLE_WEB_CLIENT_ID',
-    defaultValue:
-        '92848872267-mqvfo6n406eq3rck37oc37d3kt5uicp8.apps.googleusercontent.com',
-  );
+  static String get googleWebClientId =>
+      _env('GOOGLE_WEB_CLIENT_ID', 'GOOGLE_WEB_CLIENT_ID');
 
   /// Mapbox access token (Directions compare only — public `pk.` token).
-  ///
-  /// No default in repo (GitHub push protection). Set via `--dart-define=MAPBOX_ACCESS_TOKEN=pk....`
-  /// or Android `gradle.properties` / CI secrets.
-  static const String mapboxAccessToken = String.fromEnvironment(
-    'MAPBOX_ACCESS_TOKEN',
-    defaultValue: '',
-  );
+  static String get mapboxAccessToken =>
+      _env('MAPBOX_ACCESS_TOKEN', 'MAPBOX_ACCESS_TOKEN');
 
   /// TomTom API key for compare-provider requests.
-  static const String tomtomApiKey = String.fromEnvironment(
-    'TOMTOM_API_KEY',
-    defaultValue: 'T6DkF5gnYZKYB5q6voI8Q9modZzVOKnW',
-  );
+  static String get tomtomApiKey => _env('TOMTOM_API_KEY', 'TOMTOM_API_KEY');
 
   static bool get useRemoteHere => supabaseUrl.trim().isNotEmpty;
 }
