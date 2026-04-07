@@ -1,0 +1,8 @@
+# This file tracks properties of this Flutter project.
+# It was generated manually; run `flutter create .` to refresh after adding Flutter SDK.
+
+version:
+  revision: "manual"
+  channel: "stable"
+
+project_type: app

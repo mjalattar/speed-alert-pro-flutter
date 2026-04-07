@@ -1,0 +1,4 @@
+# Copy to local.properties (gitignored) before building Android.
+# flutter.sdk must point at your Flutter SDK checkout.
+flutter.sdk=C:\\path\\to\\flutter
+sdk.dir=C:\\Users\\YourName\\AppData\\Local\\Android\\Sdk

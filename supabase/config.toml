@@ -1,0 +1,22 @@
+# Supabase CLI — links to your hosted project. If project_id is wrong, run:
+#   supabase link --project-ref kwcupbvwsmubsixciorg
+project_id = "kwcupbvwsmubsixciorg"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "storage", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+major_version = 15
+
+[auth]
+enabled = true
+
+# Matches: supabase functions deploy here-speed --no-verify-jwt
+# (JWT is checked inside the function.)
+[functions.here-speed]
+verify_jwt = false
