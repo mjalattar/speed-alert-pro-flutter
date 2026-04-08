@@ -1,8 +1,6 @@
-/// Shared CSV field escaping for debug logs.
-///
-/// CSV field escaping (RFC-style quoting and doubled quotes).
-class CsvFormatting {
-  CsvFormatting._();
+/// RFC-style CSV field escaping (quotes and doubled quotes) for debug logs.
+class CsvEscape {
+  CsvEscape._();
 
   static String escape(String? s) {
     if (s == null || s.isEmpty) return '';

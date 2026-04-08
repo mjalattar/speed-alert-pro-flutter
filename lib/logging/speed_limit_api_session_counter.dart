@@ -21,10 +21,17 @@ class SpeedLimitApiSessionCounter {
   /// Same HERE routing count semantics as [hereRoutingTestSessionCount], for an active **driving** session.
   static final ValueNotifier<int> hereRoutingDrivingSessionCount = ValueNotifier<int>(0);
 
+  /// Supabase Edge `speed-limit-remote` POSTs during an active **simulation** test only.
+  static final ValueNotifier<int> remoteEdgeTestSessionCount = ValueNotifier<int>(0);
+
+  /// Supabase Edge `speed-limit-remote` POSTs during an active **driving** session.
+  static final ValueNotifier<int> remoteEdgeDrivingSessionCount = ValueNotifier<int>(0);
+
   static void onTestStarted() {
     _testSessionActive = true;
     count.value = 0;
     hereRoutingTestSessionCount.value = 0;
+    remoteEdgeTestSessionCount.value = 0;
   }
 
   static void onTestStopped() {
@@ -36,6 +43,7 @@ class SpeedLimitApiSessionCounter {
     _drivingSessionActive = true;
     drivingSessionRequestCount.value = 0;
     hereRoutingDrivingSessionCount.value = 0;
+    remoteEdgeDrivingSessionCount.value = 0;
   }
 
   static void onDrivingSessionStopped() {
@@ -60,6 +68,16 @@ class SpeedLimitApiSessionCounter {
     }
     if (_drivingSessionActive) {
       hereRoutingDrivingSessionCount.value = hereRoutingDrivingSessionCount.value + 1;
+    }
+  }
+
+  /// Increments Remote Edge request counters for simulation and/or driving when active.
+  static void recordRemoteEdgeIfActive() {
+    if (_testSessionActive) {
+      remoteEdgeTestSessionCount.value = remoteEdgeTestSessionCount.value + 1;
+    }
+    if (_drivingSessionActive) {
+      remoteEdgeDrivingSessionCount.value = remoteEdgeDrivingSessionCount.value + 1;
     }
   }
 }

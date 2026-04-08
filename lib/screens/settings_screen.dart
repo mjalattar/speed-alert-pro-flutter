@@ -170,43 +170,6 @@ class SettingsScreen extends ConsumerWidget {
           const Divider(),
           Text('APIs', style: Theme.of(context).textTheme.titleMedium),
           Text(
-            'Speed limit data source',
-            style: Theme.of(context).textTheme.titleSmall,
-          ),
-          RadioListTile<bool>(
-            title: const Text('On this device (local keys)'),
-            value: false,
-            groupValue: preferencesManager.useRemoteSpeedApi,
-            onChanged: (v) {
-              if (v != true) {
-                preferencesManager.useRemoteSpeedApi = false;
-                ref.read(prefsRevisionProvider.notifier).state++;
-              }
-            },
-          ),
-          RadioListTile<bool>(
-            title: const Text('Remote (Supabase Edge)'),
-            value: true,
-            groupValue: preferencesManager.useRemoteSpeedApi,
-            onChanged: (v) {
-              if (v != true) return;
-              if (!AppConfig.useRemoteHere) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text(
-                      'Add your Supabase URL to local.properties as '
-                      'supabase.url=https://YOUR-REF.supabase.co then rebuild the native app, '
-                      'or pass --dart-define=SUPABASE_URL=... for Flutter (see README).',
-                    ),
-                  ),
-                );
-                return;
-              }
-              preferencesManager.useRemoteSpeedApi = true;
-              ref.read(prefsRevisionProvider.notifier).state++;
-            },
-          ),
-          Text(
             'Main speed limit (display + alerts)',
             style: Theme.of(context).textTheme.titleSmall,
           ),
@@ -247,6 +210,34 @@ class SettingsScreen extends ConsumerWidget {
               }
             },
           ),
+          RadioListTile<int>(
+            title: const Text('Remote'),
+            subtitle: AppConfig.useRemoteHere
+                ? const Text('Uses your Supabase Edge pipeline when enabled below.')
+                : const Text(
+                    'Configure Supabase (see README) to use Remote as primary.',
+                  ),
+            value: SpeedLimitPrimaryProvider.remote,
+            groupValue: preferencesManager.primarySpeedLimitProvider,
+            onChanged: (v) {
+              if (v == null) return;
+              if (!AppConfig.useRemoteHere) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                      'Add your Supabase URL to local.properties as '
+                      'supabase.url=https://YOUR-REF.supabase.co then rebuild the native app, '
+                      'or pass --dart-define=SUPABASE_URL=... for Flutter (see README).',
+                    ),
+                  ),
+                );
+                return;
+              }
+              preferencesManager.primarySpeedLimitProvider = v;
+              preferencesManager.isRemoteApiEnabled = true;
+              ref.read(prefsRevisionProvider.notifier).state++;
+            },
+          ),
           Text(
             'API providers (choosing a main source above enables that provider here)',
             style: Theme.of(context).textTheme.titleSmall,
@@ -277,6 +268,16 @@ class SettingsScreen extends ConsumerWidget {
               ref.read(prefsRevisionProvider.notifier).state++;
             },
           ),
+          if (AppConfig.useRemoteHere)
+            SwitchListTile(
+              title: const Text('Remote'),
+              subtitle: const Text('Supabase Edge — required when Remote is the main source.'),
+              value: preferencesManager.isRemoteApiEnabled,
+              onChanged: (v) {
+                preferencesManager.isRemoteApiEnabled = v;
+                ref.read(prefsRevisionProvider.notifier).state++;
+              },
+            ),
           const Divider(),
           const SimulationDestinationSettings(),
         ],

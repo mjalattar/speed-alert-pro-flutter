@@ -1,6 +1,6 @@
-import '../core/android_location_compat.dart';
-import '../models/speed_limit_data.dart';
-import 'geo_coordinate.dart';
+import '../../core/android_location_compat.dart';
+import '../../models/speed_limit_data.dart';
+import '../shared/geo_coordinate.dart';
 
 const _alongEpsM = 0.5;
 const _spanGapMergeEpsM = 0.5;
@@ -90,6 +90,22 @@ class HereSectionSpeedModel {
   bool isExpired([int? nowMs]) {
     final now = nowMs ?? DateTime.now().millisecondsSinceEpoch;
     return now >= expiresAtMillis;
+  }
+
+  /// Posted mph per polyline edge (`geometry.length - 1`) for tie-breaking; span limit at each edge midpoint.
+  List<int?>? mphHintsPerEdge() {
+    if (geometry.length < 2) return null;
+    final n = geometry.length - 1;
+    final prefix = HereSectionSpeedModel._vertexPrefixDistancesMeters(geometry);
+    final out = List<int?>.filled(n, null);
+    for (var i = 0; i < n; i++) {
+      final mid = (prefix[i] + prefix[i + 1]) / 2.0;
+      final span = _spanForAlong(mid);
+      if (span?.speedLimitMps != null) {
+        out[i] = (span!.speedLimitMps! * 2.23694).round();
+      }
+    }
+    return out;
   }
 
   SpeedLimitData speedLimitDataAtAlong(double alongMeters) {

@@ -16,7 +16,7 @@ major_version = 15
 [auth]
 enabled = true
 
-# Matches: supabase functions deploy here-speed --no-verify-jwt
+# Matches: supabase functions deploy speed-limit-remote --no-verify-jwt
 # (JWT is checked inside the function.)
-[functions.here-speed]
+[functions.speed-limit-remote]
 verify_jwt = false

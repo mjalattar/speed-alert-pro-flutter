@@ -1,6 +1,6 @@
 import 'dart:math' as math;
 
-import '../engine/geo_coordinate.dart';
+import '../engine/shared/geo_coordinate.dart';
 
 /// Standard HERE Flexible Polyline Decoder.
 /// Decodes the compressed polyline format returned by HERE Routing API v8.

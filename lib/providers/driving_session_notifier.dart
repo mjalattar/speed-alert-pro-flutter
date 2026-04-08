@@ -6,14 +6,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 
+import '../config/app_config.dart';
 import '../core/android_system_clock.dart';
 import '../core/constants.dart'
     show AlertRunMode, kSuppressAlertsWhenPostedLimitBelowMph;
-import '../engine/geo_coordinate.dart';
-import '../engine/here_section_speed_model.dart';
+import '../engine/shared/geo_coordinate.dart';
+import '../engine/here/section_speed_model.dart';
 import '../models/speed_limit_data.dart';
-import '../services/speed_providers/mapbox_speed_provider.dart';
-import '../services/speed_providers/tomtom_speed_provider.dart';
+import '../services/mapbox/speed_provider.dart';
+import '../services/tomtom/speed_provider.dart';
 import '../services/fused_driving_location.dart';
 import '../services/location_processor.dart';
 import '../services/mock_location_tester.dart';
@@ -47,6 +48,7 @@ class DrivingSessionState {
     this.tomTomMph,
     this.mapboxMph,
     this.hereCompareMph,
+    this.remoteCompareMph,
     this.simulatedSpeedMph = 30,
     this.drivingSessionPipelineUpdates = 0,
     this.simulationRoutePolyline = const [],
@@ -68,8 +70,11 @@ class DrivingSessionState {
   final int? tomTomMph;
   final int? mapboxMph;
 
-  /// HERE mph when TomTom or Mapbox is primary (secondary HERE compare from [LocationProcessor]).
+  /// HERE mph for secondary row when primary is not HERE ([LocationProcessor.hereSecondaryCompareMph]).
   final int? hereCompareMph;
+
+  /// Remote (Edge) mph for secondary row when primary is not Remote ([LocationProcessor.remoteSecondaryCompareMph]).
+  final int? remoteCompareMph;
 
   /// Synthetic route simulation speed ([MockLocationTester] +/- adjustment).
   final int simulatedSpeedMph;
@@ -107,6 +112,7 @@ class DrivingSessionState {
     int? tomTomMph,
     int? mapboxMph,
     int? hereCompareMph,
+    int? remoteCompareMph,
     int? simulatedSpeedMph,
     int? drivingSessionPipelineUpdates,
     List<GeoCoordinate>? simulationRoutePolyline,
@@ -127,6 +133,7 @@ class DrivingSessionState {
       tomTomMph: tomTomMph ?? this.tomTomMph,
       mapboxMph: mapboxMph ?? this.mapboxMph,
       hereCompareMph: hereCompareMph ?? this.hereCompareMph,
+      remoteCompareMph: remoteCompareMph ?? this.remoteCompareMph,
       simulatedSpeedMph: simulatedSpeedMph ?? this.simulatedSpeedMph,
       drivingSessionPipelineUpdates:
           drivingSessionPipelineUpdates ?? this.drivingSessionPipelineUpdates,
@@ -211,11 +218,18 @@ class DrivingSessionNotifier extends StateNotifier<DrivingSessionState> {
     final mb = _mapbox;
     final proc = _processor;
     final hereSecondary = proc?.hereSecondaryCompareMph;
+    final remoteSecondary = proc?.remoteSecondaryCompareMph;
 
     final pm = ref.read(preferencesProvider).preferencesManager;
+    final remoteMph =
+        AppConfig.useRemoteHere && pm.isRemoteApiEnabled ? remoteSecondary : null;
+
     if (tt == null || mb == null) {
       if (proc != null) {
-        state = state.copyWith(hereCompareMph: hereSecondary);
+        state = state.copyWith(
+          hereCompareMph: hereSecondary,
+          remoteCompareMph: remoteMph,
+        );
       }
       return;
     }
@@ -224,6 +238,7 @@ class DrivingSessionNotifier extends StateNotifier<DrivingSessionState> {
         tomTomMph: null,
         mapboxMph: null,
         hereCompareMph: hereSecondary,
+        remoteCompareMph: remoteMph,
       );
       return;
     }
@@ -231,6 +246,7 @@ class DrivingSessionNotifier extends StateNotifier<DrivingSessionState> {
       tomTomMph: pm.isTomTomApiEnabled ? tt.peekCached()?.speedLimitMph : null,
       mapboxMph: pm.isMapboxApiEnabled ? mb.peekCached()?.speedLimitMph : null,
       hereCompareMph: hereSecondary,
+      remoteCompareMph: remoteMph,
     );
   }
 
@@ -410,10 +426,12 @@ class DrivingSessionNotifier extends StateNotifier<DrivingSessionState> {
     // leave [isTracking] true without [isSimulating] (Home would show "Stop tracking").
     late final List<GeoCoordinate> routePoints;
     HereSectionSpeedModel? simulationOdSectionModel;
+    late final bool simulationRouteFromRemoteEdge;
     try {
       final resolved = await resolveSimulationRoute(ref);
       routePoints = resolved.path;
       simulationOdSectionModel = resolved.sectionSpeedModel;
+      simulationRouteFromRemoteEdge = resolved.usedRemoteEdge;
     } catch (e) {
       state = state.copyWith(
         lastError: 'Simulation route error: $e',
@@ -456,7 +474,11 @@ class DrivingSessionNotifier extends StateNotifier<DrivingSessionState> {
     }
 
     _processor!.prepareForRoadTestSimulationStart();
-    _processor!.primeHereSectionSpeedModelFromSimulationOdRoute(simulationOdSectionModel);
+    if (simulationRouteFromRemoteEdge) {
+      _processor!.primeRemoteSectionSpeedModelFromSimulationOdRoute(simulationOdSectionModel);
+    } else {
+      _processor!.primeHereSectionSpeedModelFromSimulationOdRoute(simulationOdSectionModel);
+    }
 
     await SpeedDebugLogRouter.startSimulationSession();
     SpeedLimitApiSessionCounter.onTestStarted();

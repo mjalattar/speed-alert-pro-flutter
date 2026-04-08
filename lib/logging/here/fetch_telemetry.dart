@@ -1,6 +1,6 @@
-/// HERE fetch timing and outcome fields for CSV debug rows.
-class HereFetchTelemetry {
-  const HereFetchTelemetry({
+/// Fetch timing and outcome fields for CSV debug rows (local HERE or remote primary).
+class SpeedFetchTelemetry {
+  const SpeedFetchTelemetry({
     required this.requestUtc,
     required this.responseUtc,
     this.responseSource,

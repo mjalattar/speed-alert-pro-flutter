@@ -1,4 +1,4 @@
-import '../../engine/annotation_section_speed_model.dart';
+import '../../engine/compare/compare_section_speed_model.dart';
 import '../../models/speed_limit_data.dart';
 
 /// Result of a single-provider route fetch (TomTom Snap or Mapbox Directions): limit + optional section model.

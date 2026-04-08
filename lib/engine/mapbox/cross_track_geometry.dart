@@ -1,22 +1,112 @@
 import 'dart:math' as math;
 
-import '../core/android_location_compat.dart';
-import '../models/road_segment.dart';
-import 'geo_bearing.dart';
-import 'geo_coordinate.dart';
+import 'package:geolocator/geolocator.dart';
 
-/// Cross-track distance, along-polyline distance, and projection helpers for HERE/compare geometry.
+import '../../core/android_location_compat.dart';
+import '../../core/speed_provider_constants.dart';
+import '../../models/road_segment.dart';
+import '../shared/geo_bearing.dart';
+import '../shared/geo_coordinate.dart';
+
+/// Mapbox-only polyline matching (independent of HERE/TomTom implementations).
+class MapboxPolylineMatchingOptions {
+  const MapboxPolylineMatchingOptions({
+    this.horizontalAccuracyMeters,
+    this.headingAccuracyDegrees,
+    this.vehicleSpeedMps,
+    this.edgeMphPerSegment,
+  });
+
+  /// Horizontal accuracy (m) from the position fix; larger ⇒ more cross-track slack.
+  final double? horizontalAccuracyMeters;
+
+  /// Heading accuracy (deg) from the platform; larger ⇒ heading penalty is down-weighted.
+  final double? headingAccuracyDegrees;
+
+  /// Reported speed (m/s) for optional tie-break vs [edgeMphPerSegment].
+  final double? vehicleSpeedMps;
+
+  /// Posted limit (mph) per polyline edge, aligned with [geometry.length - 1].
+  final List<int?>? edgeMphPerSegment;
+
+  MapboxPolylineMatchingOptions withEdgeMph(List<int?>? edgeMph) => MapboxPolylineMatchingOptions(
+        horizontalAccuracyMeters: horizontalAccuracyMeters,
+        headingAccuracyDegrees: headingAccuracyDegrees,
+        vehicleSpeedMps: vehicleSpeedMps,
+        edgeMphPerSegment: edgeMph,
+      );
+
+  factory MapboxPolylineMatchingOptions.fromPosition(Position p) {
+    final h = p.accuracy;
+    final ha = p.headingAccuracy;
+    final spd = p.speed;
+    return MapboxPolylineMatchingOptions(
+      horizontalAccuracyMeters: h > 0 && h.isFinite ? h : null,
+      headingAccuracyDegrees: ha > 0 && ha.isFinite ? ha : null,
+      vehicleSpeedMps: spd >= 0 && spd.isFinite ? spd : null,
+    );
+  }
+}
+
+/// Cross-track distance, along-polyline distance, and projection helpers for Mapbox Directions geometry.
 ///
 /// [projectOntoPolylineForMatching] / [alongPolylineMetersForMatching] support **heading-weighted**
-/// segment choice when [userHeadingDeg] is set — reduces wrong-span picks on parallel roads / forks
-/// without HERE Route Matching API.
-class CrossTrackGeometry {
-  CrossTrackGeometry._();
+/// segment choice when [userHeadingDeg] is set — reduces wrong-span picks on parallel roads / forks.
+class MapboxCrossTrackGeometry {
+  MapboxCrossTrackGeometry._();
 
   static const earthMPerDegLat = 111320.0;
 
   /// Extra effective meters added when motion heading disagrees with segment bearing (capped).
   static const double _headingMismatchPenaltyMaxM = 55.0;
+
+  /// When heading accuracy is poor, scale down the heading mismatch penalty (rely more on distance).
+  static double _headingPenaltyScale(double? headingAccuracyDeg) {
+    if (headingAccuracyDeg == null ||
+        !headingAccuracyDeg.isFinite ||
+        headingAccuracyDeg <= 0) {
+      return 1.0;
+    }
+    return 1.0 /
+        (1.0 + (headingAccuracyDeg / 40.0).clamp(0.0, 1.75));
+  }
+
+  /// Cross-track gate: tighter when horizontal accuracy is good; looser when GPS is noisy.
+  static double effectiveMaxCrossTrackMeters({
+    required double baseMax,
+    double? horizontalAccuracyM,
+  }) {
+    if (horizontalAccuracyM == null ||
+        !horizontalAccuracyM.isFinite ||
+        horizontalAccuracyM <= 0) {
+      return baseMax;
+    }
+    final a = horizontalAccuracyM.clamp(3.0, 125.0);
+    final tight = SpeedProviderConstants
+            .polylineMatchTightCrossTrackAccuracyMultiplier *
+        a;
+    if (tight < baseMax) return tight;
+    return (baseMax +
+            SpeedProviderConstants.polylineMatchLooseCrossTrackAccuracyCoeff *
+                (a - 15.0).clamp(0.0, 120.0))
+        .clamp(baseMax, 90.0);
+  }
+
+  /// Heading gate: slightly relaxed when platform reports poor heading accuracy.
+  static double effectiveMaxHeadingDeltaDeg({
+    required double baseDeg,
+    double? headingAccuracyDeg,
+  }) {
+    if (headingAccuracyDeg == null ||
+        !headingAccuracyDeg.isFinite ||
+        headingAccuracyDeg <= 0) {
+      return baseDeg;
+    }
+    if (headingAccuracyDeg >= 30) {
+      return baseDeg + (headingAccuracyDeg - 30) * 0.35;
+    }
+    return baseDeg;
+  }
 
   static double polylineLengthMeters(List<GeoCoordinate> geometry) {
     if (geometry.length < 2) return 0;
@@ -115,7 +205,7 @@ class CrossTrackGeometry {
     return (t, cLat, cLng);
   }
 
-  static PolylineProjection? projectOntoPolylineDetailed(
+  static MapboxPolylineProjection? projectOntoPolylineDetailed(
     double userLat,
     double userLng,
     List<GeoCoordinate> geometry,
@@ -127,21 +217,42 @@ class CrossTrackGeometry {
   ///
   /// When [userHeadingDeg] is null or not finite, behavior matches pure closest-point
   /// [projectOntoPolylineDetailed] (distance-only).
-  static PolylineProjection? projectOntoPolylineForMatching(
+  ///
+  /// [matchingOptions] can supply horizontal/heading accuracy (scales gates and penalty),
+  /// plus per-edge posted mph for tie-breaking when two segments score nearly equal.
+  static MapboxPolylineProjection? projectOntoPolylineForMatching(
     double userLat,
     double userLng,
     List<GeoCoordinate> geometry,
-    double? userHeadingDeg,
-  ) {
+    double? userHeadingDeg, {
+    MapboxPolylineMatchingOptions? matchingOptions,
+  }) {
     if (geometry.length < 2) return null;
     final useHeading =
         userHeadingDeg != null && userHeadingDeg.isFinite;
+    final headingPenScale =
+        _headingPenaltyScale(matchingOptions?.headingAccuracyDegrees);
+    final n = geometry.length - 1;
+    final tieBreak = matchingOptions != null &&
+        matchingOptions.vehicleSpeedMps != null &&
+        matchingOptions.vehicleSpeedMps! >=
+            SpeedProviderConstants.polylineMatchMinVehicleSpeedMpsForTieBreak &&
+        matchingOptions.edgeMphPerSegment != null &&
+        matchingOptions.edgeMphPerSegment!.length == n;
+    List<double>? segScores;
+    List<double>? segCross;
+    List<double>? segAlong;
+    if (tieBreak) {
+      segScores = List<double>.filled(n, double.infinity);
+      segCross = List<double>.filled(n, 0);
+      segAlong = List<double>.filled(n, 0);
+    }
     var bestAlong = 0.0;
     var bestCross = double.infinity;
     var bestScore = double.infinity;
     var bestSeg = 0;
     var cum = 0.0;
-    for (var i = 0; i < geometry.length - 1; i++) {
+    for (var i = 0; i < n; i++) {
       final a = geometry[i];
       final b = geometry[i + 1];
       final segLen =
@@ -161,12 +272,18 @@ class CrossTrackGeometry {
       double score;
       if (useHeading) {
         final delta =
-            smallestBearingDeltaDeg(userHeadingDeg!, brg).clamp(0.0, 180.0);
-        final penalty =
-            (delta / 90.0).clamp(0.0, 1.75) * _headingMismatchPenaltyMaxM;
+            smallestBearingDeltaDeg(userHeadingDeg, brg).clamp(0.0, 180.0);
+        final penalty = (delta / 90.0).clamp(0.0, 1.75) *
+            _headingMismatchPenaltyMaxM *
+            headingPenScale;
         score = latDist + penalty;
       } else {
         score = latDist;
+      }
+      if (segScores != null) {
+        segScores[i] = score;
+        segCross![i] = latDist;
+        segAlong![i] = along;
       }
       if (score < bestScore - 1e-6 ||
           (score - bestScore).abs() <= 1e-6 && latDist < bestCross) {
@@ -177,13 +294,43 @@ class CrossTrackGeometry {
       }
       cum += segLen;
     }
-    final a = geometry[bestSeg];
-    final b = geometry[bestSeg + 1];
+    var pickedSeg = bestSeg;
+    if (tieBreak) {
+      final opts = matchingOptions!;
+      final scores = segScores!;
+      final alongList = segAlong!;
+      final crossList = segCross!;
+      const eps = SpeedProviderConstants.polylineMatchTieScoreEpsilonM;
+      const mpsToMph = 2.2369362920544;
+      final vMph = opts.vehicleSpeedMps! * mpsToMph;
+      final edges = opts.edgeMphPerSegment!;
+      var bestTieIdx = pickedSeg;
+      var bestTieMetric = double.infinity;
+      for (var i = 0; i < n; i++) {
+        if (scores[i] > bestScore + eps) continue;
+        final mph = edges[i];
+        if (mph == null) continue;
+        final m = (mph - vMph).abs();
+        if (m < bestTieMetric) {
+          bestTieMetric = m;
+          bestTieIdx = i;
+        }
+      }
+      if (bestTieMetric == double.infinity) {
+        // No edge mph for tie-break; keep geometric winner.
+      } else {
+        pickedSeg = bestTieIdx;
+        bestAlong = alongList[pickedSeg];
+        bestCross = crossList[pickedSeg];
+      }
+    }
+    final a = geometry[pickedSeg];
+    final b = geometry[pickedSeg + 1];
     final brg = bearingDeg(a.lat, a.lng, b.lat, b.lng);
-    return PolylineProjection(
+    return MapboxPolylineProjection(
       alongMeters: bestAlong,
       crossTrackMeters: bestCross,
-      segmentIndex: bestSeg,
+      segmentIndex: pickedSeg,
       segmentBearingDeg: brg,
     );
   }
@@ -194,31 +341,42 @@ class CrossTrackGeometry {
     double userLat,
     double userLng,
     List<GeoCoordinate> geometry,
-    double? userHeadingDeg,
-  ) {
+    double? userHeadingDeg, {
+    MapboxPolylineMatchingOptions? matchingOptions,
+  }) {
     final p = projectOntoPolylineForMatching(
       userLat,
       userLng,
       geometry,
       userHeadingDeg,
+      matchingOptions: matchingOptions,
     );
     return p?.alongMeters ?? alongPolylineMeters(userLat, userLng, geometry);
   }
 
   static bool isSectionWalkProjectionValid(
-    PolylineProjection proj,
+    MapboxPolylineProjection proj,
     List<GeoCoordinate> geometry,
     double? userHeadingDeg, {
     double maxCrossTrackM = 22,
     double maxHeadingDeltaDeg = 55,
     double endBufferM = 28,
+    MapboxPolylineMatchingOptions? matchingOptions,
   }) {
-    if (proj.crossTrackMeters > maxCrossTrackM) return false;
+    final maxX = effectiveMaxCrossTrackMeters(
+      baseMax: maxCrossTrackM,
+      horizontalAccuracyM: matchingOptions?.horizontalAccuracyMeters,
+    );
+    if (proj.crossTrackMeters > maxX) return false;
     final total = polylineLengthMeters(geometry);
     if (total >= 5.0 && proj.alongMeters > total - endBufferM) return false;
     if (userHeadingDeg != null && userHeadingDeg.isFinite) {
       final d = smallestBearingDeltaDeg(userHeadingDeg, proj.segmentBearingDeg);
-      if (d > maxHeadingDeltaDeg) return false;
+      final maxHd = effectiveMaxHeadingDeltaDeg(
+        baseDeg: maxHeadingDeltaDeg,
+        headingAccuracyDeg: matchingOptions?.headingAccuracyDegrees,
+      );
+      if (d > maxHd) return false;
     }
     return true;
   }
@@ -264,6 +422,7 @@ class CrossTrackGeometry {
     double maxCrossTrackM = 45,
     double pastEndBufferM = 60,
     double? userHeadingDeg,
+    MapboxPolylineMatchingOptions? matchingOptions,
   }) {
     if (geometry.length < 2) return false;
     final proj = projectOntoPolylineForMatching(
@@ -271,9 +430,14 @@ class CrossTrackGeometry {
       userLng,
       geometry,
       userHeadingDeg,
+      matchingOptions: matchingOptions,
     );
     if (proj == null) return false;
-    if (proj.crossTrackMeters > maxCrossTrackM) return false;
+    final maxCt = effectiveMaxCrossTrackMeters(
+      baseMax: maxCrossTrackM,
+      horizontalAccuracyM: matchingOptions?.horizontalAccuracyMeters,
+    );
+    if (proj.crossTrackMeters > maxCt) return false;
     final total = polylineLengthMeters(geometry);
     if (total < 5.0) return true;
     final along = proj.alongMeters;
@@ -281,8 +445,8 @@ class CrossTrackGeometry {
   }
 }
 
-class PolylineProjection {
-  PolylineProjection({
+class MapboxPolylineProjection {
+  MapboxPolylineProjection({
     required this.alongMeters,
     required this.crossTrackMeters,
     required this.segmentIndex,

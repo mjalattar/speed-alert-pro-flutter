@@ -5,15 +5,15 @@ import 'dart:developer' as developer;
 
 import '../../config/app_config.dart';
 import '../../core/speed_provider_constants.dart';
-import '../../engine/annotation_section_speed_model.dart';
-import '../../engine/cross_track_geometry.dart';
+import '../../engine/compare/compare_section_speed_model.dart';
+import '../../engine/mapbox/cross_track_geometry.dart';
 import '../../logging/speed_limit_api_request_logger.dart';
 import '../../logging/speed_limit_logging_context.dart';
 import '../../logging/speed_limit_http_log_interceptor.dart';
 import '../../models/speed_limit_data.dart';
 import '../preferences_manager.dart';
-import 'route_fetch_models.dart';
-import 'route_lead_geometry.dart';
+import '../speed_providers/route_fetch_models.dart';
+import '../speed_providers/route_lead_geometry.dart';
 
 void _logD(String message) {
   developer.log(message, name: 'MapboxSpeed');
@@ -81,6 +81,7 @@ class MapboxSpeedProvider {
     required double latitude,
     required double longitude,
     double? headingDegrees,
+    MapboxPolylineMatchingOptions? polylineMatchingOptions,
   }) async {
     if (!preferencesManager.isMapboxApiEnabled) {
       return RouteFetchOutcome(_disabledProviderData(), null);
@@ -113,11 +114,14 @@ class MapboxSpeedProvider {
             )
           : null;
       if (model != null) {
-        final along = CrossTrackGeometry.alongPolylineMetersForMatching(
+        final matchOpts =
+            polylineMatchingOptions?.withEdgeMph(model.mphHintsPerEdge());
+        final along = MapboxCrossTrackGeometry.alongPolylineMetersForMatching(
           latitude,
           longitude,
           model.geometry,
           headingDegrees,
+          matchingOptions: matchOpts,
         );
         final data = model.speedLimitDataAtAlong(along);
         _recordLimit(data);

@@ -1,9 +1,9 @@
-import '../engine/here_section_speed_model.dart';
-import '../services/preferences_manager.dart';
-import 'csv_formatting.dart';
-import 'log_export_platform.dart';
-import 'speed_debug_log_session.dart';
-import 'speed_limit_api_request_logger.dart';
+import '../../engine/here/section_speed_model.dart';
+import '../../services/preferences_manager.dart';
+import '../csv_escape.dart';
+import '../log_export_platform.dart';
+import '../speed_debug_log_session.dart';
+import '../speed_limit_api_request_logger.dart';
 
 /// Records per-span mph slices from local HERE route JSON for debug export.
 class HereSpanFetchSessionLogger {
@@ -71,7 +71,7 @@ class HereSpanFetchSessionLogger {
   }
 
   static String _csvLine(List<String> fields) =>
-      fields.map((f) => CsvFormatting.escape(f)).join(',');
+      fields.map((f) => CsvEscape.escape(f)).join(',');
 
   static Future<String?> copySessionToPublicDownloads(
     SpeedDebugLogSession session,

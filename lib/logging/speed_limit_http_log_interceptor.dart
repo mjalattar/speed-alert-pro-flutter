@@ -35,6 +35,9 @@ class SpeedLimitHttpLogInterceptor {
         if (category == 'HERE_Routing') {
           SpeedLimitApiSessionCounter.recordHereRoutingIfActive();
         }
+        if (category == 'Supabase_speed-limit-remote') {
+          SpeedLimitApiSessionCounter.recordRemoteEdgeIfActive();
+        }
       }
       _append(prefs, category, 'GET', urlRedacted, response.statusCode, '');
       return response;
@@ -43,6 +46,9 @@ class SpeedLimitHttpLogInterceptor {
         SpeedLimitApiSessionCounter.recordIfSessionActive();
         if (category == 'HERE_Routing') {
           SpeedLimitApiSessionCounter.recordHereRoutingIfActive();
+        }
+        if (category == 'Supabase_speed-limit-remote') {
+          SpeedLimitApiSessionCounter.recordRemoteEdgeIfActive();
         }
       }
       _append(prefs, category, 'GET', urlRedacted, -1, 'io:$e');
@@ -67,6 +73,9 @@ class SpeedLimitHttpLogInterceptor {
         if (category == 'HERE_Routing') {
           SpeedLimitApiSessionCounter.recordHereRoutingIfActive();
         }
+        if (category == 'Supabase_speed-limit-remote') {
+          SpeedLimitApiSessionCounter.recordRemoteEdgeIfActive();
+        }
       }
       _append(prefs, category, 'POST', urlRedacted, response.statusCode, '');
       return response;
@@ -75,6 +84,9 @@ class SpeedLimitHttpLogInterceptor {
         SpeedLimitApiSessionCounter.recordIfSessionActive();
         if (category == 'HERE_Routing') {
           SpeedLimitApiSessionCounter.recordHereRoutingIfActive();
+        }
+        if (category == 'Supabase_speed-limit-remote') {
+          SpeedLimitApiSessionCounter.recordRemoteEdgeIfActive();
         }
       }
       _append(prefs, category, 'POST', urlRedacted, -1, 'io:$e');

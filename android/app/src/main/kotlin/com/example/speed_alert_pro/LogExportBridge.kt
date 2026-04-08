@@ -14,7 +14,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-/** Export unified CSV / HERE span CSV / TomTom–Mapbox HTTP CSV to [MediaStore.Downloads] (API 29+). */
+/** Export unified CSV / HERE span CSV / TomTom–Mapbox–Remote HTTP CSV to [MediaStore.Downloads] (API 29+). */
 class LogExportBridge(
     private val context: Context,
     engine: FlutterEngine,
@@ -65,6 +65,7 @@ class LogExportBridge(
                     val tag = when (provider) {
                         "TOMTOM" -> "tomtom_http"
                         "MAPBOX" -> "mapbox_http"
+                        "REMOTE" -> "remote_http"
                         else -> {
                             result.success(null)
                             return@setMethodCallHandler

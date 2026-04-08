@@ -3,11 +3,12 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../config/app_config.dart';
 import '../core/app_foreground_tracker.dart';
-import '../services/speed_providers/mapbox_speed_provider.dart';
-import '../services/speed_providers/tomtom_speed_provider.dart';
+import '../services/mapbox/speed_provider.dart';
+import '../services/tomtom/speed_provider.dart';
+import '../services/here/api_service.dart';
 import '../services/here/here_alert_route_provider.dart';
-import '../services/here_api_service.dart';
-import '../services/here_edge_function_client.dart';
+import '../services/remote/edge_function_client.dart';
+import '../services/remote/remote_alert_route_provider.dart';
 import '../services/preferences_manager.dart';
 import '../services/entitlement_repository.dart';
 import '../services/speed_limit_aggregator.dart';
@@ -45,9 +46,9 @@ final hereApiServiceProvider = Provider<HereApiService>(
   (ref) => HereApiService.create(apiKey: AppConfig.hereApiKey),
 );
 
-final hereEdgeFunctionClientProvider = Provider<HereEdgeFunctionClient?>((ref) {
+final remoteEdgeFunctionClientProvider = Provider<RemoteEdgeFunctionClient?>((ref) {
   if (!AppConfig.useRemoteHere) return null;
-  return HereEdgeFunctionClient(
+  return RemoteEdgeFunctionClient(
     accessTokenProvider: () async {
       final session = Supabase.instance.client.auth.currentSession;
       if (session == null) {
@@ -72,20 +73,28 @@ final mapboxSpeedProviderProvider = Provider<MapboxSpeedProvider>((ref) {
   );
 });
 
-/// HERE Routing / Edge — alert limit and map surfaces only (no TomTom/Mapbox).
+/// HERE Router on device (no Remote).
 final hereAlertRouteProviderProvider = Provider<HereAlertRouteProvider>((ref) {
   return HereAlertRouteProvider(
     preferencesManager: ref.watch(preferencesProvider).preferencesManager,
     hereApi: ref.watch(hereApiServiceProvider),
-    hereEdgeFunctionClient: ref.watch(hereEdgeFunctionClientProvider),
   );
 });
 
-/// HERE alert + progressive speed rows (Edge or local REST).
+/// Remote (Supabase Edge) — separate from HERE REST.
+final remoteAlertRouteProviderProvider = Provider<RemoteAlertRouteProvider>((ref) {
+  return RemoteAlertRouteProvider(
+    preferencesManager: ref.watch(preferencesProvider).preferencesManager,
+    edgeClient: ref.watch(remoteEdgeFunctionClientProvider),
+  );
+});
+
+/// HERE, Remote, TomTom, Mapbox rows for progressive UI; primary matches [LocationProcessor].
 final speedLimitAggregatorProvider = Provider<SpeedLimitAggregator>((ref) {
   return SpeedLimitAggregator(
     preferencesManager: ref.watch(preferencesProvider).preferencesManager,
     here: ref.watch(hereAlertRouteProviderProvider),
+    remote: ref.watch(remoteAlertRouteProviderProvider),
     tomTom: ref.watch(tomTomSpeedProviderProvider),
     mapbox: ref.watch(mapboxSpeedProviderProvider),
   );

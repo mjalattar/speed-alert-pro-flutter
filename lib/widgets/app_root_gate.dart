@@ -4,6 +4,7 @@ import 'package:purchases_flutter/purchases_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../config/app_config.dart';
+import '../core/constants.dart' show SpeedLimitPrimaryProvider;
 import '../providers/app_providers.dart';
 import '../screens/google_sign_in_screen.dart';
 import '../screens/subscription_paywall_screen.dart';
@@ -57,7 +58,10 @@ class EntitlementGate extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final preferencesManager =
         ref.watch(preferencesProvider).preferencesManager;
-    if (!AppConfig.useRemoteHere || !preferencesManager.useRemoteSpeedApi) {
+    final primary = preferencesManager.resolvedPrimarySpeedLimitProvider;
+    if (!AppConfig.useRemoteHere ||
+        !preferencesManager.isRemoteApiEnabled ||
+        primary != SpeedLimitPrimaryProvider.remote) {
       return child;
     }
 

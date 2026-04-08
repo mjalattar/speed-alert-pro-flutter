@@ -1,22 +1,22 @@
 import 'dart:convert';
 
-import '../config/app_config.dart';
-import '../logging/speed_limit_api_session_counter.dart';
-import '../logging/speed_limit_http_log_interceptor.dart';
-import '../engine/geo_coordinate.dart';
-import '../core/polyline_decoder.dart';
-import '../models/speed_limit_data.dart';
+import '../../config/app_config.dart';
+import '../../logging/speed_limit_http_log_interceptor.dart';
+import '../../engine/shared/geo_coordinate.dart';
+import '../../core/polyline_decoder.dart';
+import '../../models/speed_limit_data.dart';
 
-/// Supabase Edge Function client for `here-speed` (alert + route simulation).
-class HereEdgeFunctionClient {
-  HereEdgeFunctionClient({required this.accessTokenProvider});
+/// Supabase Edge Function client for the Remote speed pipeline (`speed-limit-remote`).
+class RemoteEdgeFunctionClient {
+  RemoteEdgeFunctionClient({required this.accessTokenProvider});
 
   /// Returns a JWT (e.g. Supabase session) for `Authorization: Bearer`.
   final Future<String> Function() accessTokenProvider;
 
+  /// Must match deployed function name: `supabase functions deploy speed-limit-remote`.
   Uri get _url =>
       Uri.parse('${AppConfig.supabaseUrl.trim().replaceAll(RegExp(r'/$'), '')}'
-          '/functions/v1/here-speed');
+          '/functions/v1/speed-limit-remote');
 
   Future<SpeedLimitData> fetchAlertSpeedMph({
     required double lat,
@@ -26,7 +26,6 @@ class HereEdgeFunctionClient {
     double? headingDegrees,
   }) async {
     final token = await accessTokenProvider();
-    // Omit null/optional keys — Edge expects sparse JSON like the native client.
     final bodyMap = <String, dynamic>{
       'lat': lat,
       'lng': lng,
@@ -47,15 +46,13 @@ class HereEdgeFunctionClient {
         'Content-Type': 'application/json; charset=utf-8',
       },
       body: body,
-      category: 'Supabase_here-speed',
-      countTowardSession: false,
+      category: 'Supabase_speed-limit-remote',
+      countTowardSession: true,
     );
-    // Count after a completed HTTP response (not on transport failure before response).
-    SpeedLimitApiSessionCounter.recordIfSessionActive();
 
     if (res.statusCode == 402) {
       return const SpeedLimitData(
-        provider: 'HERE Maps',
+        provider: 'Remote',
         speedLimitMph: null,
         confidence: ConfidenceLevel.low,
         source: 'Subscription or trial required',
@@ -65,10 +62,10 @@ class HereEdgeFunctionClient {
     if (res.statusCode < 200 || res.statusCode >= 300) {
       final msg = _edgeHttpErrorMessage(res.body);
       return SpeedLimitData(
-        provider: 'HERE Maps',
+        provider: 'Remote',
         speedLimitMph: null,
         confidence: ConfidenceLevel.low,
-        source: 'Edge: HTTP ${res.statusCode} — $msg',
+        source: 'Remote: HTTP ${res.statusCode} — $msg',
       );
     }
 
@@ -76,7 +73,7 @@ class HereEdgeFunctionClient {
     final err = map['error'] as String?;
     if (err != null && err.isNotEmpty) {
       return SpeedLimitData(
-        provider: 'HERE Maps',
+        provider: 'Remote',
         speedLimitMph: null,
         confidence: ConfidenceLevel.low,
         source: err,
@@ -86,11 +83,11 @@ class HereEdgeFunctionClient {
     final mph = map['speed_limit_mph'];
     final cached = map['cached'] as bool?;
     final src = cached == true
-        ? 'HERE (cached)'
-        : (map['source'] as String? ?? 'HERE (edge)');
+        ? 'Remote (cached)'
+        : (map['source'] as String? ?? 'Remote');
     if (mph is int) {
       return SpeedLimitData(
-        provider: 'HERE Maps',
+        provider: 'Remote',
         speedLimitMph: mph,
         confidence: ConfidenceLevel.high,
         source: src,
@@ -98,7 +95,7 @@ class HereEdgeFunctionClient {
     }
     if (mph is num) {
       return SpeedLimitData(
-        provider: 'HERE Maps',
+        provider: 'Remote',
         speedLimitMph: mph.round(),
         confidence: ConfidenceLevel.high,
         source: src,
@@ -106,14 +103,14 @@ class HereEdgeFunctionClient {
     }
 
     return SpeedLimitData(
-      provider: 'HERE Maps',
+      provider: 'Remote',
       speedLimitMph: null,
       confidence: ConfidenceLevel.low,
       source: src,
     );
   }
 
-  /// `kind: "route"` — full HERE-shaped body + decoded polyline for [HereApiService.parseAlertFetchFromDecodedRoute].
+  /// `kind: "route"` — full route body + decoded polyline for [HereApiService.parseAlertFetchFromDecodedRoute].
   Future<({List<GeoCoordinate> geometry, Map<String, dynamic> root})?> fetchRoutePolylineForSimulation({
     required double originLat,
     required double originLng,
@@ -137,10 +134,9 @@ class HereEdgeFunctionClient {
         'Content-Type': 'application/json; charset=utf-8',
       },
       body: body,
-      category: 'Supabase_here-speed',
-      countTowardSession: false,
+      category: 'Supabase_speed-limit-remote',
+      countTowardSession: true,
     );
-    SpeedLimitApiSessionCounter.recordIfSessionActive();
 
     if (res.statusCode < 200 || res.statusCode >= 300) return null;
     final root = jsonDecode(res.body) as Map<String, dynamic>;

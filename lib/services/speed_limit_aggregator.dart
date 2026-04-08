@@ -1,9 +1,11 @@
+import '../config/app_config.dart';
 import '../core/constants.dart' show SpeedLimitPrimaryProvider;
-import '../models/here_alert_fetch_result.dart';
+import '../models/route_alert_fetch_result.dart';
 import '../models/speed_limit_data.dart';
-import 'speed_providers/mapbox_speed_provider.dart';
-import 'speed_providers/tomtom_speed_provider.dart';
+import 'mapbox/speed_provider.dart';
+import 'tomtom/speed_provider.dart';
 import 'here/here_alert_route_provider.dart';
+import 'remote/remote_alert_route_provider.dart';
 import 'preferences_manager.dart';
 
 /// Aggregates speed-limit rows for map / progressive UI. The **primary** vendor ([PreferencesManager.resolvedPrimarySpeedLimitProvider])
@@ -12,12 +14,14 @@ class SpeedLimitAggregator {
   SpeedLimitAggregator({
     required this.preferencesManager,
     required this.here,
+    required this.remote,
     required this.tomTom,
     required this.mapbox,
   });
 
   final PreferencesManager preferencesManager;
   final HereAlertRouteProvider here;
+  final RemoteAlertRouteProvider remote;
   final TomTomSpeedProvider tomTom;
   final MapboxSpeedProvider mapbox;
 
@@ -35,7 +39,7 @@ class SpeedLimitAggregator {
         source: 'Not fetched yet',
       );
 
-  /// Streams HERE, TomTom, and Mapbox rows. **Primary** row is flagged for UI emphasis.
+  /// HERE, Remote (when built), TomTom, and Mapbox rows. **Primary** row is flagged for UI emphasis.
   ///
   /// TomTom/Mapbox are served from the sticky cache only (pipeline fills the cache while driving).
   Future<void> fetchAllSpeedLimitsProgressive({
@@ -52,14 +56,33 @@ class SpeedLimitAggregator {
     if (includeHere) {
       final data = !preferencesManager.isHereApiEnabled
           ? _disabledProviderData('HERE Maps')
-          : await here.fetchHereMapsOnly(
+          : await here.fetchMapsSpeedLimit(
               lat: latitude,
               lng: longitude,
               headingDegrees: headingDegrees,
               destLat: destinationLat,
               destLng: destinationLng,
             );
-      onEach(data, isPrimaryProviderRow: primary == SpeedLimitPrimaryProvider.here);
+      onEach(
+        data,
+        isPrimaryProviderRow: primary == SpeedLimitPrimaryProvider.here,
+      );
+    }
+
+    if (AppConfig.useRemoteHere) {
+      final data = !preferencesManager.isRemoteApiEnabled
+          ? _disabledProviderData('Remote')
+          : await remote.fetchMapsSpeedLimit(
+              lat: latitude,
+              lng: longitude,
+              headingDegrees: headingDegrees,
+              destLat: destinationLat,
+              destLng: destinationLng,
+            );
+      onEach(
+        data,
+        isPrimaryProviderRow: primary == SpeedLimitPrimaryProvider.remote,
+      );
     }
 
     final ttData = !preferencesManager.isTomTomApiEnabled
@@ -73,6 +96,7 @@ class SpeedLimitAggregator {
     onEach(mbData, isPrimaryProviderRow: primary == SpeedLimitPrimaryProvider.mapbox);
   }
 
+  /// Secondary HERE compare (HERE REST only — not Remote).
   Future<SpeedLimitData> fetchHereMapsOnly({
     required double lat,
     required double lng,
@@ -80,7 +104,7 @@ class SpeedLimitAggregator {
     double? destLat,
     double? destLng,
   }) =>
-      here.fetchHereMapsOnly(
+      here.fetchMapsSpeedLimit(
         lat: lat,
         lng: lng,
         headingDegrees: headingDegrees,
@@ -88,14 +112,45 @@ class SpeedLimitAggregator {
         destLng: destLng,
       );
 
-  Future<HereAlertFetchResult> fetchHereForAlerts({
+  /// Secondary Remote compare (Supabase Edge — same as alert `kind: alert`).
+  Future<SpeedLimitData> fetchRemoteMapsOnly({
     required double lat,
     required double lng,
     double? headingDegrees,
     double? destLat,
     double? destLng,
   }) =>
-      here.fetchHereForAlerts(
+      remote.fetchMapsSpeedLimit(
+        lat: lat,
+        lng: lng,
+        headingDegrees: headingDegrees,
+        destLat: destLat,
+        destLng: destLng,
+      );
+
+  Future<RouteAlertFetchResult> fetchHereForAlerts({
+    required double lat,
+    required double lng,
+    double? headingDegrees,
+    double? destLat,
+    double? destLng,
+  }) =>
+      here.fetchForAlerts(
+        lat: lat,
+        lng: lng,
+        headingDegrees: headingDegrees,
+        destLat: destLat,
+        destLng: destLng,
+      );
+
+  Future<RouteAlertFetchResult> fetchRemoteForAlerts({
+    required double lat,
+    required double lng,
+    double? headingDegrees,
+    double? destLat,
+    double? destLng,
+  }) =>
+      remote.fetchForAlerts(
         lat: lat,
         lng: lng,
         headingDegrees: headingDegrees,

@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../core/constants.dart';
 
-/// Speed / limit summary card: main limit for the selected primary provider + up to two **other**
-/// providers listed below (never duplicates the primary in the list).
+/// Speed / limit summary card: main limit for the selected primary provider + **other**
+/// enabled providers listed below (never duplicates the primary in the list).
 class SpeedSessionSummaryCard extends StatefulWidget {
   const SpeedSessionSummaryCard({
     super.key,
@@ -17,6 +17,8 @@ class SpeedSessionSummaryCard extends StatefulWidget {
     required this.hereMph,
     required this.tomTomMph,
     required this.mapboxMph,
+    this.remoteCompareEnabled = false,
+    this.remoteMph,
     required this.alertThresholdMph,
     required this.suppressAlertsUnder15Mph,
   });
@@ -38,6 +40,13 @@ class SpeedSessionSummaryCard extends StatefulWidget {
 
   final int? tomTomMph;
   final int? mapboxMph;
+
+  /// When true (Supabase build), show a **Remote** row when it is not the primary provider.
+  final bool remoteCompareEnabled;
+
+  /// Remote (Edge) mph (main limit when Remote is primary; secondary compare otherwise).
+  final int? remoteMph;
+
   final int alertThresholdMph;
   final bool suppressAlertsUnder15Mph;
 
@@ -211,6 +220,10 @@ class _SpeedSessionSummaryCardState extends State<SpeedSessionSummaryCard>
     }
     if (primary != SpeedLimitPrimaryProvider.mapbox) {
       rows.add(_secondaryProviderRow(context, 'Mapbox', widget.mapboxMph, fg));
+    }
+    if (widget.remoteCompareEnabled &&
+        primary != SpeedLimitPrimaryProvider.remote) {
+      rows.add(_secondaryProviderRow(context, 'Remote', widget.remoteMph, fg));
     }
     return rows;
   }

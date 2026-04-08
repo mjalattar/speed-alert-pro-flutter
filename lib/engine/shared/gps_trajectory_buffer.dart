@@ -2,7 +2,7 @@ import 'dart:math' as math;
 
 import 'package:geolocator/geolocator.dart';
 
-import '../core/android_location_compat.dart';
+import '../../core/android_location_compat.dart';
 
 /// Short FIFO of recent fixes for trajectory bearing (device bearing when available, else geodesic).
 class GpsTrajectoryBuffer {

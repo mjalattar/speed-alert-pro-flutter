@@ -1,12 +1,12 @@
 import 'dart:convert';
 import 'dart:math' as math;
 
-import '../core/android_location_compat.dart';
-import '../core/speed_provider_constants.dart';
-import '../models/speed_limit_data.dart';
-import 'cross_track_geometry.dart';
-import 'geo_bearing.dart';
-import 'geo_coordinate.dart';
+import '../../core/android_location_compat.dart';
+import '../../core/speed_provider_constants.dart';
+import '../../models/speed_limit_data.dart';
+import '../mapbox/cross_track_geometry.dart';
+import '../shared/geo_bearing.dart';
+import '../shared/geo_coordinate.dart';
 
 const double _alongEpsM = 0.5;
 
@@ -31,6 +31,13 @@ class AnnotationSectionSpeedModel {
   /// TomTom: [projectedPoints] → [route[routeIndex]]. Mapbox: [annotation.maxspeed] at projected edge on route geometry.
   /// Independent of other providers; only encodes that vendor’s response at the vehicle.
   final int? vehicleAnchorMph;
+
+  /// Posted mph per polyline edge (`geometry.length - 1`); null if slice layout does not match edges.
+  List<int?>? mphHintsPerEdge() {
+    final edges = geometry.length - 1;
+    if (edges < 1 || _slices.length != edges) return null;
+    return List<int?>.generate(edges, (i) => _slices[i].mph);
+  }
 
   bool isExpired([int? nowMillis]) {
     final now = nowMillis ?? DateTime.now().millisecondsSinceEpoch;
@@ -214,7 +221,7 @@ class AnnotationSectionSpeedModel {
     double? headingDegrees,
   ) {
     if (geo.length < 2 || maxspeedArr.isEmpty) return null;
-    final proj = CrossTrackGeometry.projectOntoPolylineForMatching(
+    final proj = MapboxCrossTrackGeometry.projectOntoPolylineForMatching(
       vehicleLat,
       vehicleLng,
       geo,

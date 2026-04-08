@@ -1,20 +1,20 @@
 import 'dart:convert';
 
-import '../core/android_location_compat.dart';
-import '../core/constants.dart';
-import '../logging/here_span_fetch_session_logger.dart';
-import '../logging/logging_globals.dart';
-import '../logging/speed_limit_http_log_interceptor.dart';
-import '../core/geo.dart';
-import '../engine/cross_track_geometry.dart';
-import '../engine/geo_bearing.dart' as gb;
-import '../engine/geo_coordinate.dart';
-import '../engine/here_route_speed_limits.dart';
-import '../engine/here_section_speed_model.dart';
-import '../core/polyline_decoder.dart';
-import '../models/here_alert_fetch_result.dart';
-import '../models/road_segment.dart';
-import '../models/speed_limit_data.dart';
+import '../../core/android_location_compat.dart';
+import '../../core/constants.dart';
+import '../../logging/here/span_fetch_session_logger.dart';
+import '../../logging/logging_globals.dart';
+import '../../logging/speed_limit_http_log_interceptor.dart';
+import '../../core/geo.dart';
+import '../../engine/here/cross_track_geometry.dart';
+import '../../engine/shared/geo_bearing.dart' as gb;
+import '../../engine/shared/geo_coordinate.dart';
+import '../../engine/here/route_speed_limits.dart';
+import '../../engine/here/section_speed_model.dart';
+import '../../core/polyline_decoder.dart';
+import '../../models/route_alert_fetch_result.dart';
+import '../../models/road_segment.dart';
+import '../../models/speed_limit_data.dart';
 
 /// Local HERE Routing API client ([router.hereapi.com](https://router.hereapi.com) v8).
 class HereApiService {
@@ -91,7 +91,7 @@ class HereApiService {
   ///
   /// [headingDegrees]: motion heading for polyline matching (weighted segment choice). When null,
   /// a **start-of-route** tangent is used only if [(lat,lng)] is within ~40 m of the first vertex.
-  HereAlertFetchResult parseAlertFetchFromDecodedRoute(
+  RouteAlertFetchResult parseAlertFetchFromDecodedRoute(
     Map<String, dynamic> root, {
     required double lat,
     required double lng,
@@ -100,7 +100,7 @@ class HereApiService {
     final routes = root['routes'] as List<dynamic>?;
     final route = routes?.isNotEmpty == true ? routes!.first as Map<String, dynamic> : null;
     if (route == null) {
-      return HereAlertFetchResult(
+      return RouteAlertFetchResult(
         data: const SpeedLimitData(
           provider: 'HERE Maps',
           speedLimitMph: null,
@@ -143,7 +143,7 @@ class HereApiService {
     }
 
     final alongVehicle = geometry.length >= 2
-        ? CrossTrackGeometry.alongPolylineMetersForMatching(
+        ? HereCrossTrackGeometry.alongPolylineMetersForMatching(
             lat,
             lng,
             geometry,
@@ -173,7 +173,7 @@ class HereApiService {
       );
     }
 
-    return HereAlertFetchResult(
+    return RouteAlertFetchResult(
       data: data,
       stickySegment: sticky,
       sectionSpeedModel: sectionModel,
@@ -322,7 +322,7 @@ class HereApiService {
   }
 
   /// Full HERE alert fetch: `v8/routes` request then [parseAlertFetchFromDecodedRoute].
-  Future<HereAlertFetchResult> fetchHereAlertWithStickySegment({
+  Future<RouteAlertFetchResult> fetchHereAlertWithStickySegment({
     required double lat,
     required double lng,
     double? headingDegrees,
@@ -349,7 +349,7 @@ class HereApiService {
       category: 'HERE_Routing',
     );
     if (res.statusCode != 200) {
-      return HereAlertFetchResult(
+      return RouteAlertFetchResult(
         data: SpeedLimitData(
           provider: 'HERE Maps',
           speedLimitMph: null,

@@ -31,4 +31,18 @@ class SpeedProviderConstants {
   static const int mapboxBearingToleranceDeg = 45;
   static const int mapboxSecondaryRouteModelTtlMs = 25 * 60 * 1000;
   static const double mapboxSecondaryVehicleAnchorAlongMaxM = 50.0;
+
+  // --- Polyline GNSS-assisted matching (TomTom / Mapbox / HERE section-walk) ---
+
+  /// When two segment scores differ by at most this (meters), optional posted-speed tie-break runs.
+  static const double polylineMatchTieScoreEpsilonM = 4.0;
+
+  /// Minimum vehicle speed (m/s) before using posted limit vs speed for tie-breaking.
+  static const double polylineMatchMinVehicleSpeedMpsForTieBreak = 4.0;
+
+  /// Tight cross-track gate scales with good horizontal accuracy: `min(base, k * accuracy)`.
+  static const double polylineMatchTightCrossTrackAccuracyMultiplier = 2.0;
+
+  /// Extra cross-track slack when horizontal accuracy is poor (m per meter of accuracy above 15 m).
+  static const double polylineMatchLooseCrossTrackAccuracyCoeff = 0.45;
 }

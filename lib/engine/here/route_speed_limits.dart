@@ -1,4 +1,4 @@
-import 'here_section_speed_model.dart';
+import 'section_speed_model.dart';
 
 /// HERE routing span helpers for local speed-limit parsing.
 class HereRouteSpeedLimits {

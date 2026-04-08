@@ -1,9 +1,10 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:speed_alert_pro/engine/annotation_section_speed_model.dart';
-import 'package:speed_alert_pro/engine/cross_track_geometry.dart';
+import 'package:speed_alert_pro/engine/compare/compare_section_speed_model.dart';
+import 'package:speed_alert_pro/engine/mapbox/cross_track_geometry.dart';
+import 'package:speed_alert_pro/engine/tomtom/cross_track_geometry.dart';
 
 void main() {
-  group('AnnotationSectionSpeedModel', () {
+  group('CompareSectionSpeedModel', () {
     test('fromMapboxDirectionsJson parses maxspeed and geometry', () {
       const json = '''
 {"routes":[{"geometry":{"type":"LineString","coordinates":[[-95.02,29.54],[-95.021,29.541]]},"legs":[{"annotation":{"maxspeed":[{"speed":105,"unit":"km/h"},{"speed":105,"unit":"km/h"}]}}]}]}''';
@@ -16,7 +17,7 @@ void main() {
       expect(m, isNotNull);
       expect(m!.provider, 'Mapbox');
       expect(m.totalLengthM, greaterThan(1.0));
-      final along = CrossTrackGeometry.alongPolylineMetersForMatching(
+      final along = MapboxCrossTrackGeometry.alongPolylineMetersForMatching(
         29.5405,
         -95.0205,
         m.geometry,
@@ -38,7 +39,7 @@ void main() {
       );
       expect(m, isNotNull);
       expect(m!.provider, 'TomTom');
-      final along = CrossTrackGeometry.alongPolylineMetersForMatching(
+      final along = TomTomCrossTrackGeometry.alongPolylineMetersForMatching(
         29.54,
         -95.02,
         m.geometry,

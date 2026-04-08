@@ -32,7 +32,8 @@ class SpeedLimitLoggingContext {
   static int? _lastMapboxMph;
   static String _lastTomTomMphCell = '';
   static String _lastMapboxMphCell = '';
-  static String _hereCompareMphCell = '';
+  static String _hereMphCell = '';
+  static String _remoteMphCell = '';
   static String _hereAlertResolvePath = '';
 
   /// Android [SystemClock] nanoseconds at fix time when available.
@@ -67,11 +68,19 @@ class SpeedLimitLoggingContext {
     _lastMapboxMphCell = formatMphCsvCell(mph, trigger == 'mapbox_fetch');
   }
 
-  static void setHereCompareMphCell(int? mph, bool fromNetworkFetch) {
-    _hereCompareMphCell = formatMphCsvCell(mph, fromNetworkFetch);
+  /// HERE provider mph (primary HERE or HERE compare fetch).
+  static void setHereMphCell(int? mph, bool fromNetworkFetch) {
+    _hereMphCell = mph == null ? '' : formatMphCsvCell(mph, fromNetworkFetch);
   }
 
-  static String hereCompareMphForCsv() => _hereCompareMphCell;
+  /// Remote / Supabase Edge mph (primary Remote or Remote compare fetch).
+  static void setRemoteMphCell(int? mph, bool fromNetworkFetch) {
+    _remoteMphCell = mph == null ? '' : formatMphCsvCell(mph, fromNetworkFetch);
+  }
+
+  static String hereMphForCsv() => _hereMphCell;
+
+  static String remoteMphForCsv() => _remoteMphCell;
 
   static String tomTomMphCellForCsv() =>
       _lastTomTomMphCell.isNotEmpty
@@ -125,7 +134,8 @@ class SpeedLimitLoggingContext {
     _lastMapboxMph = null;
     _lastTomTomMphCell = '';
     _lastMapboxMphCell = '';
-    _hereCompareMphCell = '';
+    _hereMphCell = '';
+    _remoteMphCell = '';
     _hereAlertResolvePath = '';
   }
 

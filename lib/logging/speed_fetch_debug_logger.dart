@@ -1,14 +1,14 @@
 import 'dart:io';
 
 import '../services/preferences_manager.dart';
-import 'here_fetch_telemetry.dart';
+import 'here/fetch_telemetry.dart';
 import 'speed_alert_log_filesystem.dart';
 import 'speed_provider_http_session_logger.dart';
-import 'here_span_fetch_session_logger.dart';
+import 'here/span_fetch_session_logger.dart';
 import 'speed_debug_log_session.dart';
 import 'speed_limit_api_request_logger.dart';
 
-export 'here_fetch_telemetry.dart';
+export 'here/fetch_telemetry.dart';
 
 /// Append structured speed-fetch debug rows (CSV) for the active session.
 class SpeedFetchDebugLogger {
@@ -38,7 +38,7 @@ class SpeedFetchDebugLogger {
     required String sourceTag,
     int? tomtomMph,
     int? mapboxMph,
-    HereFetchTelemetry? hereTelemetry,
+    SpeedFetchTelemetry? fetchTelemetry,
     double? vehicleSpeedMph,
     double? metersSincePriorFetchTrigger,
     int? msSincePriorFetchTrigger,
@@ -67,7 +67,7 @@ class SpeedFetchDebugLogger {
       segmentKey: segmentKey,
       tomtomMph: tomtomMph,
       mapboxMph: mapboxMph,
-      hereTelemetry: hereTelemetry,
+      fetchTelemetry: fetchTelemetry,
       vehicleSpeedMph: vehicleSpeedMph,
       metersSincePriorFetch: metersSincePriorFetchTrigger,
       msSincePriorFetch: msSincePriorFetchTrigger,
@@ -75,6 +75,7 @@ class SpeedFetchDebugLogger {
       fetchGeneration: fetchGeneration,
       requestReasonHuman: requestReasonHuman,
       markHereLimitsFromNetworkFetch: mirrorEventType == 'speed_fetch_summary',
+      primarySourceTag: sourceTag,
     );
   }
 
@@ -84,7 +85,7 @@ class SpeedFetchDebugLogger {
     required double lng,
     double? bearing,
     required String sourceTag,
-    required HereFetchTelemetry hereTelemetry,
+    required SpeedFetchTelemetry fetchTelemetry,
     int rawMph = -1,
     int displayMph = -1,
     double? vehicleSpeedMph,
@@ -106,7 +107,7 @@ class SpeedFetchDebugLogger {
       sourceTag: sourceTag,
       tomtomMph: null,
       mapboxMph: null,
-      hereTelemetry: hereTelemetry,
+      fetchTelemetry: fetchTelemetry,
       vehicleSpeedMph: vehicleSpeedMph,
       metersSincePriorFetchTrigger: metersSincePriorFetchTrigger,
       msSincePriorFetchTrigger: msSincePriorFetchTrigger,
@@ -125,6 +126,7 @@ class SpeedFetchDebugLogger {
     await HereSpanFetchSessionLogger.copySessionToPublicDownloads(session);
     await SpeedProviderHttpSessionLogger.copyTomTomToPublicDownloads(session);
     await SpeedProviderHttpSessionLogger.copyMapboxToPublicDownloads(session);
+    await SpeedProviderHttpSessionLogger.copyRemoteToPublicDownloads(session);
     return csvName;
   }
 }

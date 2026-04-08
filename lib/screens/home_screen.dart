@@ -122,6 +122,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with RouteAware {
                   : drive.hereCompareMph,
               tomTomMph: drive.tomTomMph,
               mapboxMph: drive.mapboxMph,
+              remoteCompareEnabled: AppConfig.useRemoteHere,
+              remoteMph: preferencesManager.resolvedPrimarySpeedLimitProvider ==
+                      SpeedLimitPrimaryProvider.remote
+                  ? drive.limitMph?.round()
+                  : drive.remoteCompareMph,
               alertThresholdMph: threshold,
               suppressAlertsUnder15Mph: preferencesManager.suppressAlertsWhenUnder15Mph,
             ),
@@ -179,6 +184,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with RouteAware {
                             builder: (context, hereReqCount, _) {
                               return Text(
                                 'HERE speed-limit API requests (this session): $hereReqCount',
+                                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                              );
+                            },
+                          ),
+                          const SizedBox(height: 4),
+                          ValueListenableBuilder<int>(
+                            valueListenable:
+                                SpeedLimitApiSessionCounter.remoteEdgeDrivingSessionCount,
+                            builder: (context, remoteReqCount, _) {
+                              return Text(
+                                'Remote (Supabase Edge) requests (this session): $remoteReqCount',
                                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                                       fontWeight: FontWeight.w600,
                                     ),

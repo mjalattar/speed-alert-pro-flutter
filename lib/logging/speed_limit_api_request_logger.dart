@@ -1,11 +1,11 @@
 import 'dart:io';
 
 import '../config/app_config.dart';
-import '../engine/annotation_section_speed_model.dart';
+import '../engine/compare/compare_section_speed_model.dart';
 import '../models/speed_limit_data.dart';
 import '../services/preferences_manager.dart';
-import 'csv_formatting.dart';
-import 'here_fetch_telemetry.dart';
+import 'csv_escape.dart';
+import 'here/fetch_telemetry.dart';
 import 'speed_alert_log_filesystem.dart';
 import 'speed_debug_log_session.dart';
 import 'speed_limit_logging_context.dart';
@@ -24,12 +24,12 @@ class SpeedLimitApiRequestLogger {
       'lat,lng,bearing_deg,speed_mps,horizontal_accuracy_m,altitude_m,vertical_accuracy_m,'
       'location_provider,location_fix_age_ms,'
       'vehicle_speed_mph,'
-      'raw_mph,display_mph,here_compare_mph,tomtom_mph,mapbox_mph,stabilized,source_tag,segment_key,'
+      'display_mph,here_mph,remote_mph,tomtom_mph,mapbox_mph,stabilized,source_tag,segment_key,'
       'here_api_request_utc,here_api_response_utc,here_response_source,here_response_confidence,'
       'here_functional_class,here_segment_cache_zones,here_segment_route_len_m,here_api_error,'
       'meters_since_prior_fetch_trigger,ms_since_prior_fetch_trigger,gps_trace_point_count,'
       'request_reason_human,road_functional_class,odometer_meters,'
-      'build_use_remote_here,prefs_use_remote_speed_api,prefs_here_enabled,prefs_local_stabilizer,'
+      'build_use_remote_here,prefs_api_remote_enabled,prefs_here_enabled,prefs_local_stabilizer,'
       'here_alert_path,fetch_generation,app_session_id,compare_fetch_diag\n';
 
   static String utcNow() => SpeedFetchDebugLoggerUtc.utcNow();
@@ -108,9 +108,9 @@ class SpeedLimitApiRequestLogger {
       requestReasonHuman: reason,
       snap: snap,
       vehicleSpeedMph: '',
-      rawMph: '',
       displayMph: '',
-      hereCompareMph: SpeedLimitLoggingContext.hereCompareMphForCsv(),
+      hereMph: SpeedLimitLoggingContext.hereMphForCsv(),
+      remoteMph: SpeedLimitLoggingContext.remoteMphForCsv(),
       stabilized: '',
       sourceTag: '',
       segmentKey: '',
@@ -140,8 +140,8 @@ class SpeedLimitApiRequestLogger {
         'TomTom REST ($method): snap-to-roads for speed compare (polyline model).',
       'Mapbox' =>
         'Mapbox REST ($method): directions with maxspeed annotation for speed compare.',
-      'Supabase_here-speed' =>
-        'Supabase Edge here-speed ($method): server-side HERE / multi-provider speed.',
+      'Supabase_speed-limit-remote' =>
+        'Supabase Edge speed-limit-remote ($method): server-side HERE Routes v8 + cache.',
       _ => 'Speed-related HTTP $method (category=$category).',
     };
   }
@@ -161,7 +161,7 @@ class SpeedLimitApiRequestLogger {
     String? segmentKey,
     int? tomtomMph,
     int? mapboxMph,
-    HereFetchTelemetry? hereTelemetry,
+    SpeedFetchTelemetry? fetchTelemetry,
     double? vehicleSpeedMph,
     double? metersSincePriorFetch,
     int? msSincePriorFetch,
@@ -169,24 +169,32 @@ class SpeedLimitApiRequestLogger {
     int? fetchGeneration,
     String requestReasonHuman = '',
     bool markHereLimitsFromNetworkFetch = false,
+    /// Primary provider for this row (`here` / `remote` / `tomtom` / `mapbox`) — used to bold the matching mph cell on network success.
+    String primarySourceTag = '',
   }) async {
     if (!isLoggingEnabled(preferencesManager)) return;
     if (!SpeedDebugLogSessionHolder.isSessionActive()) return;
     final snap = await SpeedLimitLoggingContext.snapshotAsync();
     final bearStr = bearing != null && bearing.isFinite ? bearing.toStringAsFixed(1) : '';
     final seg = segmentKey?.replaceAll(',', ';') ?? '';
-    final ht = hereTelemetry;
-    final boldHere =
+    final ht = fetchTelemetry;
+    final networkSuccess =
         markHereLimitsFromNetworkFetch && rawMph >= 0 && displayMph >= 0;
-    final rawStr = boldHere
-        ? SpeedLimitLoggingContext.formatMphCsvCell(rawMph, true)
-        : rawMph.toString();
-    final displayStr = boldHere
+    final displayStr = networkSuccess
         ? SpeedLimitLoggingContext.formatMphCsvCell(displayMph, true)
         : displayMph.toString();
-    final hereCompareStr = boldHere
-        ? SpeedLimitLoggingContext.formatMphCsvCell(rawMph, true)
-        : SpeedLimitLoggingContext.hereCompareMphForCsv();
+    final String hereStr;
+    if (networkSuccess && primarySourceTag == 'here') {
+      hereStr = SpeedLimitLoggingContext.formatMphCsvCell(rawMph, true);
+    } else {
+      hereStr = SpeedLimitLoggingContext.hereMphForCsv();
+    }
+    final String remoteStr;
+    if (networkSuccess && primarySourceTag == 'remote') {
+      remoteStr = SpeedLimitLoggingContext.formatMphCsvCell(rawMph, true);
+    } else {
+      remoteStr = SpeedLimitLoggingContext.remoteMphForCsv();
+    }
     final ttStr = tomtomMph != null
         ? tomtomMph.toString()
         : SpeedLimitLoggingContext.tomTomMphCellForCsv();
@@ -223,9 +231,9 @@ class SpeedLimitApiRequestLogger {
       snap: rowSnap,
       vehicleSpeedMph:
           vehicleSpeedMph != null && vehicleSpeedMph.isFinite ? vehicleSpeedMph.toStringAsFixed(2) : '',
-      rawMph: rawStr,
       displayMph: displayStr,
-      hereCompareMph: hereCompareStr,
+      hereMph: hereStr,
+      remoteMph: remoteStr,
       stabilized: stabilized ? '1' : '0',
       sourceTag: sourceTag,
       segmentKey: seg,
@@ -307,9 +315,9 @@ class SpeedLimitApiRequestLogger {
           'TomTom Snap: along-polyline slice vs vehicle anchor; snap indices.',
       snap: rowSnap,
       vehicleSpeedMph: '',
-      rawMph: '',
       displayMph: '',
-      hereCompareMph: SpeedLimitLoggingContext.hereCompareMphForCsv(),
+      hereMph: SpeedLimitLoggingContext.hereMphForCsv(),
+      remoteMph: SpeedLimitLoggingContext.remoteMphForCsv(),
       stabilized: '',
       sourceTag: 'tomtom_fetch_diag',
       segmentKey: '',
@@ -385,9 +393,9 @@ class SpeedLimitApiRequestLogger {
           'Mapbox Directions: along-polyline slice vs vehicle anchor; edge indices.',
       snap: rowSnap,
       vehicleSpeedMph: '',
-      rawMph: '',
       displayMph: '',
-      hereCompareMph: SpeedLimitLoggingContext.hereCompareMphForCsv(),
+      hereMph: SpeedLimitLoggingContext.hereMphForCsv(),
+      remoteMph: SpeedLimitLoggingContext.remoteMphForCsv(),
       stabilized: '',
       sourceTag: 'mapbox_fetch_diag',
       segmentKey: '',
@@ -443,9 +451,9 @@ class SpeedLimitApiRequestLogger {
           'TomTom sticky cache updated (see note for mph and API source strings).',
       snap: snap,
       vehicleSpeedMph: '',
-      rawMph: '',
       displayMph: '',
-      hereCompareMph: SpeedLimitLoggingContext.hereCompareMphForCsv(),
+      hereMph: SpeedLimitLoggingContext.hereMphForCsv(),
+      remoteMph: SpeedLimitLoggingContext.remoteMphForCsv(),
       stabilized: '',
       sourceTag: 'tomtom_cache',
       segmentKey: '',
@@ -501,9 +509,9 @@ class SpeedLimitApiRequestLogger {
           'Mapbox sticky cache updated (see note for mph and API source strings).',
       snap: snap,
       vehicleSpeedMph: '',
-      rawMph: '',
       displayMph: '',
-      hereCompareMph: SpeedLimitLoggingContext.hereCompareMphForCsv(),
+      hereMph: SpeedLimitLoggingContext.hereMphForCsv(),
+      remoteMph: SpeedLimitLoggingContext.remoteMphForCsv(),
       stabilized: '',
       sourceTag: 'mapbox_cache',
       segmentKey: '',
@@ -573,9 +581,9 @@ class SpeedLimitApiRequestLogger {
           'Shown speed limit changed (after stabilizer and downward debouncer).',
       snap: rowSnap,
       vehicleSpeedMph: vehicleMph.toStringAsFixed(2),
-      rawMph: stabilizerMph.toString(),
       displayMph: newDisplayMph.toString(),
-      hereCompareMph: SpeedLimitLoggingContext.hereCompareMphForCsv(),
+      hereMph: SpeedLimitLoggingContext.hereMphForCsv(),
+      remoteMph: SpeedLimitLoggingContext.remoteMphForCsv(),
       stabilized: stabilizerMph != newDisplayMph ? '1' : '0',
       sourceTag: 'ui_display',
       segmentKey: seg,
@@ -609,9 +617,9 @@ class SpeedLimitApiRequestLogger {
     required String requestReasonHuman,
     required LoggingSnapshot snap,
     required String vehicleSpeedMph,
-    required String rawMph,
     required String displayMph,
-    required String hereCompareMph,
+    required String hereMph,
+    required String remoteMph,
     required String stabilized,
     required String sourceTag,
     required String segmentKey,
@@ -636,53 +644,53 @@ class SpeedLimitApiRequestLogger {
     final latStr = snap.hasFix ? snap.lat.toStringAsFixed(7) : '';
     final lngStr = snap.hasFix ? snap.lng.toStringAsFixed(7) : '';
     final line = StringBuffer()
-      ..write('${CsvFormatting.escape(utc)},')
-      ..write('${CsvFormatting.escape(eventType)},')
-      ..write('${CsvFormatting.escape(category)},')
-      ..write('${CsvFormatting.escape(method)},')
-      ..write('${CsvFormatting.escape(urlRedacted)},')
+      ..write('${CsvEscape.escape(utc)},')
+      ..write('${CsvEscape.escape(eventType)},')
+      ..write('${CsvEscape.escape(category)},')
+      ..write('${CsvEscape.escape(method)},')
+      ..write('${CsvEscape.escape(urlRedacted)},')
       ..write('$httpCode,')
-      ..write('${CsvFormatting.escape(note.replaceAll('\n', ' ').length > 500 ? note.replaceAll('\n', ' ').substring(0, 500) : note.replaceAll('\n', ' '))},')
-      ..write('${CsvFormatting.escape(latStr)},')
-      ..write('${CsvFormatting.escape(lngStr)},')
-      ..write('${CsvFormatting.escape(snap.bearingDeg)},')
-      ..write('${CsvFormatting.escape(snap.speedMps)},')
-      ..write('${CsvFormatting.escape(snap.horizontalAccuracyM)},')
-      ..write('${CsvFormatting.escape(snap.altitudeM)},')
-      ..write('${CsvFormatting.escape(snap.verticalAccuracyM)},')
-      ..write('${CsvFormatting.escape(snap.provider)},')
-      ..write('${CsvFormatting.escape(snap.fixAgeMs)},')
-      ..write('${CsvFormatting.escape(vehicleSpeedMph)},')
-      ..write('${CsvFormatting.escape(rawMph)},')
-      ..write('${CsvFormatting.escape(displayMph)},')
-      ..write('${CsvFormatting.escape(hereCompareMph)},')
-      ..write('${CsvFormatting.escape(tomtomMph)},')
-      ..write('${CsvFormatting.escape(mapboxMph)},')
-      ..write('${CsvFormatting.escape(stabilized)},')
-      ..write('${CsvFormatting.escape(sourceTag)},')
-      ..write('${CsvFormatting.escape(segmentKey)},')
-      ..write('${CsvFormatting.escape(hereReqUtc)},')
-      ..write('${CsvFormatting.escape(hereResUtc)},')
-      ..write('${CsvFormatting.escape(hereSrc)},')
-      ..write('${CsvFormatting.escape(hereConf)},')
-      ..write('${CsvFormatting.escape(hereFc)},')
-      ..write('${CsvFormatting.escape(hereZones)},')
-      ..write('${CsvFormatting.escape(hereRouteLen)},')
-      ..write('${CsvFormatting.escape(hereErr)},')
-      ..write('${CsvFormatting.escape(metersSinceFetch)},')
-      ..write('${CsvFormatting.escape(msSinceFetch)},')
-      ..write('${CsvFormatting.escape(gpsTracePoints)},')
-      ..write('${CsvFormatting.escape(requestReasonHuman.replaceAll('\n', ' ').length > 800 ? requestReasonHuman.replaceAll('\n', ' ').substring(0, 800) : requestReasonHuman.replaceAll('\n', ' '))},')
-      ..write('${CsvFormatting.escape(snap.roadFunctionalClass)},')
-      ..write('${CsvFormatting.escape(snap.odometerMeters)},')
+      ..write('${CsvEscape.escape(note.replaceAll('\n', ' ').length > 500 ? note.replaceAll('\n', ' ').substring(0, 500) : note.replaceAll('\n', ' '))},')
+      ..write('${CsvEscape.escape(latStr)},')
+      ..write('${CsvEscape.escape(lngStr)},')
+      ..write('${CsvEscape.escape(snap.bearingDeg)},')
+      ..write('${CsvEscape.escape(snap.speedMps)},')
+      ..write('${CsvEscape.escape(snap.horizontalAccuracyM)},')
+      ..write('${CsvEscape.escape(snap.altitudeM)},')
+      ..write('${CsvEscape.escape(snap.verticalAccuracyM)},')
+      ..write('${CsvEscape.escape(snap.provider)},')
+      ..write('${CsvEscape.escape(snap.fixAgeMs)},')
+      ..write('${CsvEscape.escape(vehicleSpeedMph)},')
+      ..write('${CsvEscape.escape(displayMph)},')
+      ..write('${CsvEscape.escape(hereMph)},')
+      ..write('${CsvEscape.escape(remoteMph)},')
+      ..write('${CsvEscape.escape(tomtomMph)},')
+      ..write('${CsvEscape.escape(mapboxMph)},')
+      ..write('${CsvEscape.escape(stabilized)},')
+      ..write('${CsvEscape.escape(sourceTag)},')
+      ..write('${CsvEscape.escape(segmentKey)},')
+      ..write('${CsvEscape.escape(hereReqUtc)},')
+      ..write('${CsvEscape.escape(hereResUtc)},')
+      ..write('${CsvEscape.escape(hereSrc)},')
+      ..write('${CsvEscape.escape(hereConf)},')
+      ..write('${CsvEscape.escape(hereFc)},')
+      ..write('${CsvEscape.escape(hereZones)},')
+      ..write('${CsvEscape.escape(hereRouteLen)},')
+      ..write('${CsvEscape.escape(hereErr)},')
+      ..write('${CsvEscape.escape(metersSinceFetch)},')
+      ..write('${CsvEscape.escape(msSinceFetch)},')
+      ..write('${CsvEscape.escape(gpsTracePoints)},')
+      ..write('${CsvEscape.escape(requestReasonHuman.replaceAll('\n', ' ').length > 800 ? requestReasonHuman.replaceAll('\n', ' ').substring(0, 800) : requestReasonHuman.replaceAll('\n', ' '))},')
+      ..write('${CsvEscape.escape(snap.roadFunctionalClass)},')
+      ..write('${CsvEscape.escape(snap.odometerMeters)},')
       ..write('${AppConfig.useRemoteHere ? '1' : '0'},')
-      ..write('${preferencesManager.useRemoteSpeedApi ? '1' : '0'},')
+      ..write('${preferencesManager.isRemoteApiEnabled ? '1' : '0'},')
       ..write('${preferencesManager.isHereApiEnabled ? '1' : '0'},')
       ..write('0,')
-      ..write('${CsvFormatting.escape(SpeedLimitLoggingContext.hereAlertPathForCsv())},')
-      ..write('${CsvFormatting.escape(fetchGeneration)},')
-      ..write('${CsvFormatting.escape(SpeedLimitLoggingContext.appSessionId)},')
-      ..write('${CsvFormatting.escape(compareFetchDiag)}\n');
+      ..write('${CsvEscape.escape(SpeedLimitLoggingContext.hereAlertPathForCsv())},')
+      ..write('${CsvEscape.escape(fetchGeneration)},')
+      ..write('${CsvEscape.escape(SpeedLimitLoggingContext.appSessionId)},')
+      ..write('${CsvEscape.escape(compareFetchDiag)}\n');
     final file = SpeedAlertLogFilesystem.sessionLogFile(session);
     final needHeader = !file.existsSync() || file.lengthSync() == 0;
     final raf = file.openSync(mode: FileMode.append);

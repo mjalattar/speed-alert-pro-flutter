@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../config/app_config.dart';
+import '../core/constants.dart' show SpeedLimitPrimaryProvider;
 import '../core/entitlement_ids.dart';
 import 'preferences_manager.dart';
 import 'purchases_ext.dart';
@@ -17,7 +18,11 @@ class EntitlementRepository {
     required PreferencesManager preferencesManager,
     SupabaseClient? supabase,
   }) async {
-    if (!AppConfig.useRemoteHere || !preferencesManager.useRemoteSpeedApi) {
+    if (!AppConfig.useRemoteHere || !preferencesManager.isRemoteApiEnabled) {
+      return true;
+    }
+    if (preferencesManager.resolvedPrimarySpeedLimitProvider !=
+        SpeedLimitPrimaryProvider.remote) {
       return true;
     }
 

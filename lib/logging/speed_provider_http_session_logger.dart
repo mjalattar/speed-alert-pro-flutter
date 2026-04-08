@@ -1,19 +1,21 @@
-import 'csv_formatting.dart';
+import 'csv_escape.dart';
 import 'log_export_platform.dart';
 import 'speed_debug_log_session.dart';
 import 'speed_limit_api_request_logger.dart';
 import '../services/preferences_manager.dart';
 
-/// Session-scoped HTTP rows for TomTom and for Mapbox (separate buffers; CSV export alongside HERE span logs).
+/// Session-scoped HTTP rows for TomTom, Mapbox, and Remote/Supabase Edge (separate buffers; CSV export alongside HERE span logs).
 class SpeedProviderHttpSessionLogger {
   SpeedProviderHttpSessionLogger._();
 
   static final List<_HttpRow> _tomTom = [];
   static final List<_HttpRow> _mapbox = [];
+  static final List<_HttpRow> _remote = [];
 
   static void clearSession() {
     _tomTom.clear();
     _mapbox.clear();
+    _remote.clear();
   }
 
   /// Record when [SpeedLimitHttpLogInterceptor] logs a TomTom or a Mapbox request (same gating as unified CSV).
@@ -39,6 +41,9 @@ class SpeedProviderHttpSessionLogger {
         break;
       case 'Mapbox':
         _mapbox.add(row);
+        break;
+      case 'Supabase_speed-limit-remote':
+        _remote.add(row);
         break;
       default:
         break;
@@ -78,7 +83,7 @@ class SpeedProviderHttpSessionLogger {
   }
 
   static String _csvLine(List<String> fields) =>
-      fields.map((f) => CsvFormatting.escape(f)).join(',');
+      fields.map((f) => CsvEscape.escape(f)).join(',');
 
   static Future<String?> copyTomTomToPublicDownloads(
     SpeedDebugLogSession session,
@@ -103,6 +108,19 @@ class SpeedProviderHttpSessionLogger {
       content: content,
       session: session,
       provider: 'MAPBOX',
+    );
+  }
+
+  static Future<String?> copyRemoteToPublicDownloads(
+    SpeedDebugLogSession session,
+  ) async {
+    if (session == SpeedDebugLogSession.none) return null;
+    if (_remote.isEmpty) return null;
+    final content = _buildCsv(_remote, 'Remote', session.name);
+    return LogExportPlatform.copyProviderHttpSessionCsvToDownloads(
+      content: content,
+      session: session,
+      provider: 'REMOTE',
     );
   }
 }

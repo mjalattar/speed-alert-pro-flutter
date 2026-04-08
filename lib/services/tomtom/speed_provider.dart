@@ -7,15 +7,15 @@ import '../../config/app_config.dart';
 import '../../core/android_location_compat.dart';
 import '../../core/geo.dart';
 import '../../core/speed_provider_constants.dart';
-import '../../engine/annotation_section_speed_model.dart';
-import '../../engine/cross_track_geometry.dart';
+import '../../engine/compare/compare_section_speed_model.dart';
+import '../../engine/tomtom/cross_track_geometry.dart';
 import '../../logging/speed_limit_api_request_logger.dart';
 import '../../logging/speed_limit_logging_context.dart';
 import '../../logging/speed_limit_http_log_interceptor.dart';
 import '../../models/speed_limit_data.dart';
 import '../preferences_manager.dart';
-import 'route_fetch_models.dart';
-import 'route_lead_geometry.dart';
+import '../speed_providers/route_fetch_models.dart';
+import '../speed_providers/route_lead_geometry.dart';
 
 void _logD(String message) {
   developer.log(message, name: 'TomTomSpeed');
@@ -83,6 +83,7 @@ class TomTomSpeedProvider {
     double? headingDegrees,
     int? locationFixTimeUtcMs,
     double? speedMpsForSnapTiming,
+    TomTomPolylineMatchingOptions? polylineMatchingOptions,
   }) async {
     if (!preferencesManager.isTomTomApiEnabled) {
       return RouteFetchOutcome(_disabledProviderData(), null);
@@ -116,11 +117,14 @@ class TomTomSpeedProvider {
             )
           : null;
       if (model != null) {
-        final along = CrossTrackGeometry.alongPolylineMetersForMatching(
+        final matchOpts =
+            polylineMatchingOptions?.withEdgeMph(model.mphHintsPerEdge());
+        final along = TomTomCrossTrackGeometry.alongPolylineMetersForMatching(
           latitude,
           longitude,
           model.geometry,
           headingDegrees,
+          matchingOptions: matchOpts,
         );
         final data = model.speedLimitDataAtAlong(along);
         _recordLimit(data);

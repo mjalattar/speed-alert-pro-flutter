@@ -6,6 +6,8 @@ abstract final class SpeedLimitPrimaryProvider {
   static const int here = 0;
   static const int tomTom = 1;
   static const int mapbox = 2;
+  /// Edge-backed pipeline (same inputs/outputs shape as local HERE; see [PreferencesManager.isRemoteApiEnabled]).
+  static const int remote = 3;
 }
 
 /// When “suppress alerts under 15 mph” is enabled, overspeed alerts are off while the **posted**

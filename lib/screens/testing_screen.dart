@@ -6,7 +6,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../config/app_config.dart';
 import '../core/constants.dart';
-import '../engine/geo_coordinate.dart';
+import '../engine/shared/geo_coordinate.dart';
 import '../logging/speed_limit_api_session_counter.dart';
 import '../providers/app_providers.dart';
 import '../providers/driving_session_notifier.dart';
@@ -109,9 +109,9 @@ class _TestingScreenState extends ConsumerState<TestingScreen> {
     final mapHeight = (h * 0.33).clamp(160.0, 360.0);
     final showPlatformMap = widget.tabActive;
 
-    final edge = ref.watch(hereEdgeFunctionClientProvider);
+    final edge = ref.watch(remoteEdgeFunctionClientProvider);
     final canSimViaRemote = AppConfig.useRemoteHere &&
-        preferencesManager.useRemoteSpeedApi &&
+        preferencesManager.isRemoteApiEnabled &&
         edge != null;
     final canRunSimulation =
         preferencesManager.isHereApiEnabled || canSimViaRemote;
@@ -126,7 +126,7 @@ class _TestingScreenState extends ConsumerState<TestingScreen> {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text(
-                'Enable HERE Maps in Settings, or turn on Remote speed API (Supabase Edge).',
+                'Enable HERE Maps in Settings, or enable Remote and turn on the Remote API.',
               ),
             ),
           );
@@ -184,6 +184,11 @@ class _TestingScreenState extends ConsumerState<TestingScreen> {
                   : drive.hereCompareMph,
               tomTomMph: drive.tomTomMph,
               mapboxMph: drive.mapboxMph,
+              remoteCompareEnabled: AppConfig.useRemoteHere,
+              remoteMph: preferencesManager.resolvedPrimarySpeedLimitProvider ==
+                      SpeedLimitPrimaryProvider.remote
+                  ? drive.limitMph?.round()
+                  : drive.remoteCompareMph,
               alertThresholdMph: preferencesManager.alertThresholdMph,
               suppressAlertsUnder15Mph:
                   preferencesManager.suppressAlertsWhenUnder15Mph,
@@ -249,6 +254,19 @@ class _TestingScreenState extends ConsumerState<TestingScreen> {
                           builder: (context, hereReqCount, _) {
                             return Text(
                               'HERE speed-limit API requests (this test): $hereReqCount',
+                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                            );
+                          },
+                        ),
+                        const SizedBox(height: 4),
+                        ValueListenableBuilder<int>(
+                          valueListenable:
+                              SpeedLimitApiSessionCounter.remoteEdgeTestSessionCount,
+                          builder: (context, remoteReqCount, _) {
+                            return Text(
+                              'Remote (Supabase Edge) requests (this test): $remoteReqCount',
                               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                                     fontWeight: FontWeight.w600,
                                   ),

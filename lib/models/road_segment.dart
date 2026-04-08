@@ -1,4 +1,4 @@
-import '../engine/geo_coordinate.dart';
+import '../engine/shared/geo_coordinate.dart';
 
 /// Cached road segment for sticky speed-limit display (HERE routing polyline or Edge synthetic corridor).
 ///

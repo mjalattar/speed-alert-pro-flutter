@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'speed_provider_http_session_logger.dart';
-import 'here_span_fetch_session_logger.dart';
+import 'here/span_fetch_session_logger.dart';
 import 'speed_alert_log_filesystem.dart';
 import 'speed_debug_log_session.dart';
 import 'speed_limit_api_request_logger.dart';

@@ -1,8 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../config/app_config.dart';
-import '../engine/geo_coordinate.dart';
-import '../engine/here_section_speed_model.dart';
+import '../engine/shared/geo_coordinate.dart';
+import '../engine/here/section_speed_model.dart';
 import '../providers/app_providers.dart';
 import 'preferences_manager.dart';
 
@@ -72,17 +72,21 @@ String simulationRouteDestinationLatLngString(
 ///
 /// Returns empty [path] if origin/destination invalid or APIs yield no polyline — **no** synthetic
 /// fallback (simulation does not start).
-Future<({List<GeoCoordinate> path, HereSectionSpeedModel? sectionSpeedModel})> resolveSimulationRoute(
+Future<({
+  List<GeoCoordinate> path,
+  HereSectionSpeedModel? sectionSpeedModel,
+  bool usedRemoteEdge,
+})> resolveSimulationRoute(
   Ref ref,
 ) async {
   final preferencesManager = ref.read(preferencesProvider).preferencesManager;
-  final edgeClient = ref.read(hereEdgeFunctionClientProvider);
+  final edgeClient = ref.read(remoteEdgeFunctionClientProvider);
   final hereApi = ref.read(hereApiServiceProvider);
 
   var destStr = simulationRouteDestinationLatLngString(preferencesManager).trim();
 
   if (destStr.isEmpty) {
-    return (path: <GeoCoordinate>[], sectionSpeedModel: null);
+    return (path: <GeoCoordinate>[], sectionSpeedModel: null, usedRemoteEdge: false);
   }
 
   final originStr = simulationRouteOriginLatLng(preferencesManager).trim();
@@ -91,10 +95,10 @@ Future<({List<GeoCoordinate> path, HereSectionSpeedModel? sectionSpeedModel})> r
 
   // Preset 3 (coordinates): require valid both ends.
   if (preferencesManager.simulationDestinationPreset == 3 && (o == null || d == null)) {
-    return (path: <GeoCoordinate>[], sectionSpeedModel: null);
+    return (path: <GeoCoordinate>[], sectionSpeedModel: null, usedRemoteEdge: false);
   }
   if (o == null || d == null) {
-    return (path: <GeoCoordinate>[], sectionSpeedModel: null);
+    return (path: <GeoCoordinate>[], sectionSpeedModel: null, usedRemoteEdge: false);
   }
 
   final oLat = o.lat;
@@ -103,11 +107,11 @@ Future<({List<GeoCoordinate> path, HereSectionSpeedModel? sectionSpeedModel})> r
   final dLng = d.lng;
 
   final canSimViaRemote = AppConfig.useRemoteHere &&
-      preferencesManager.useRemoteSpeedApi &&
+      preferencesManager.isRemoteApiEnabled &&
       edgeClient != null;
 
   if (!preferencesManager.isHereApiEnabled && !canSimViaRemote) {
-    return (path: <GeoCoordinate>[], sectionSpeedModel: null);
+    return (path: <GeoCoordinate>[], sectionSpeedModel: null, usedRemoteEdge: false);
   }
 
   if (canSimViaRemote) {
@@ -124,12 +128,16 @@ Future<({List<GeoCoordinate> path, HereSectionSpeedModel? sectionSpeedModel})> r
           lat: oLat,
           lng: oLng,
         );
-        return (path: bundle.geometry, sectionSpeedModel: parsed.sectionSpeedModel);
+        return (
+          path: bundle.geometry,
+          sectionSpeedModel: parsed.sectionSpeedModel,
+          usedRemoteEdge: true,
+        );
       }
     } catch (_) {}
   }
 
-  // Local HERE: single O–D routing response decodes map polyline + spans.
+  // HERE on device: single O–D routing response decodes map polyline + spans.
   if (preferencesManager.isHereApiEnabled && AppConfig.hereApiKey.isNotEmpty) {
     try {
       final od = await hereApi.fetchSimulationOdRouteWithSection(
@@ -137,10 +145,14 @@ Future<({List<GeoCoordinate> path, HereSectionSpeedModel? sectionSpeedModel})> r
         destination: '$dLat,$dLng',
       );
       if (od != null && od.geometry.length >= 2) {
-        return (path: od.geometry, sectionSpeedModel: od.sectionSpeedModel);
+        return (
+          path: od.geometry,
+          sectionSpeedModel: od.sectionSpeedModel,
+          usedRemoteEdge: false,
+        );
       }
     } catch (_) {}
   }
 
-  return (path: <GeoCoordinate>[], sectionSpeedModel: null);
+  return (path: <GeoCoordinate>[], sectionSpeedModel: null, usedRemoteEdge: false);
 }

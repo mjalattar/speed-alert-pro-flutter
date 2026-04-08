@@ -24,7 +24,8 @@ class PreferencesManager {
   static const _kApiHere = 'api_here_enabled';
   static const _kApiTomTom = 'api_tomtom_enabled';
   static const _kApiMapbox = 'api_mapbox_enabled';
-  /// [SpeedLimitPrimaryProvider.here], [SpeedLimitPrimaryProvider.tomTom], or [SpeedLimitPrimaryProvider.mapbox].
+  static const _kApiRemote = 'api_remote_enabled';
+  /// [SpeedLimitPrimaryProvider] value (here, tomTom, mapbox, remote).
   static const _kPrimarySpeedLimitProvider = 'primary_speed_limit_provider';
   /// One-shot: turn on the API switch for the stored main provider if it was still off (legacy mismatch).
   static const _kPrimaryApiFlagsAlignedV1 = 'prefs_primary_api_flags_aligned_v1';
@@ -55,6 +56,7 @@ class PreferencesManager {
     'api_here_enabled',
     'api_tomtom_enabled',
     'api_mapbox_enabled',
+    'api_remote_enabled',
     'primary_speed_limit_provider',
     'prefs_primary_api_flags_aligned_v1',
     'sim_dest_preset',
@@ -88,7 +90,26 @@ class PreferencesManager {
     final p = await SharedPreferences.getInstance();
     final m = PreferencesManager(p);
     await m._alignPrimaryProviderApiFlagsOnce();
+    await m._migrateRemotePrimaryFromLegacyRemotePrefs();
     return m;
+  }
+
+  /// Legacy [useRemoteSpeedApi] + primary HERE → primary [remote].
+  Future<void> _migrateRemotePrimaryFromLegacyRemotePrefs() async {
+    const k = 'prefs_migrate_remote_primary_v1';
+    if (_prefs.getBool(k) == true) return;
+    final hadRemoteKey = _prefs.containsKey(_kUseRemoteSpeedApi);
+    final legacyRemote = hadRemoteKey && (_prefs.getBool(_kUseRemoteSpeedApi) ?? false);
+    final primary = _prefs.getInt(_kPrimarySpeedLimitProvider);
+    if (legacyRemote &&
+        AppConfig.useRemoteHere &&
+        (primary == null || primary == SpeedLimitPrimaryProvider.here)) {
+      await _prefs.setInt(_kPrimarySpeedLimitProvider, SpeedLimitPrimaryProvider.remote);
+      if (!_prefs.containsKey(_kApiRemote)) {
+        await _prefs.setBool(_kApiRemote, true);
+      }
+    }
+    await _prefs.setBool(k, true);
   }
 
   /// If user had chosen TomTom/Mapbox as main but left that API disabled, [resolvedPrimarySpeedLimitProvider]
@@ -104,6 +125,9 @@ class PreferencesManager {
     }
     if (want == SpeedLimitPrimaryProvider.mapbox && !isMapboxApiEnabled) {
       isMapboxApiEnabled = true;
+    }
+    if (want == SpeedLimitPrimaryProvider.remote && AppConfig.useRemoteHere && !isRemoteApiEnabled) {
+      isRemoteApiEnabled = true;
     }
     await _prefs.setBool(_kPrimaryApiFlagsAlignedV1, true);
   }
@@ -133,19 +157,29 @@ class PreferencesManager {
   bool get isMapboxApiEnabled => _prefs.getBool(_kApiMapbox) ?? false;
   set isMapboxApiEnabled(bool v) => _prefs.setBool(_kApiMapbox, v);
 
-  /// Which API drives the **main** speed limit (display + alerts). Default HERE (matches prior single-provider behavior).
+  /// Enables the remote (Edge) pipeline when [AppConfig.useRemoteHere] is true.
+  bool get isRemoteApiEnabled =>
+      AppConfig.useRemoteHere && (_prefs.getBool(_kApiRemote) ?? true);
+  set isRemoteApiEnabled(bool v) => _prefs.setBool(_kApiRemote, v);
+
+  /// Which API drives the **main** speed limit (display + alerts). Default HERE.
   int get primarySpeedLimitProvider =>
       (_prefs.getInt(_kPrimarySpeedLimitProvider) ?? SpeedLimitPrimaryProvider.here)
-          .clamp(SpeedLimitPrimaryProvider.here, SpeedLimitPrimaryProvider.mapbox);
+          .clamp(SpeedLimitPrimaryProvider.here, SpeedLimitPrimaryProvider.remote);
 
   set primarySpeedLimitProvider(int v) =>
-      _prefs.setInt(_kPrimarySpeedLimitProvider, v.clamp(SpeedLimitPrimaryProvider.here, SpeedLimitPrimaryProvider.mapbox));
+      _prefs.setInt(_kPrimarySpeedLimitProvider, v.clamp(SpeedLimitPrimaryProvider.here, SpeedLimitPrimaryProvider.remote));
 
-  /// Effective primary when the stored choice is disabled — first enabled in order HERE → TomTom → Mapbox, else HERE.
+  /// Effective primary when the stored choice is disabled — first enabled in order HERE → remote → TomTom → Mapbox, else HERE.
   int get resolvedPrimarySpeedLimitProvider {
     final want = primarySpeedLimitProvider;
     if (want == SpeedLimitPrimaryProvider.here && isHereApiEnabled) {
       return SpeedLimitPrimaryProvider.here;
+    }
+    if (want == SpeedLimitPrimaryProvider.remote &&
+        AppConfig.useRemoteHere &&
+        isRemoteApiEnabled) {
+      return SpeedLimitPrimaryProvider.remote;
     }
     if (want == SpeedLimitPrimaryProvider.tomTom && isTomTomApiEnabled) {
       return SpeedLimitPrimaryProvider.tomTom;
@@ -154,6 +188,9 @@ class PreferencesManager {
       return SpeedLimitPrimaryProvider.mapbox;
     }
     if (isHereApiEnabled) return SpeedLimitPrimaryProvider.here;
+    if (AppConfig.useRemoteHere && isRemoteApiEnabled) {
+      return SpeedLimitPrimaryProvider.remote;
+    }
     if (isTomTomApiEnabled) return SpeedLimitPrimaryProvider.tomTom;
     if (isMapboxApiEnabled) return SpeedLimitPrimaryProvider.mapbox;
     return SpeedLimitPrimaryProvider.here;
@@ -166,6 +203,8 @@ class PreferencesManager {
     switch (primarySpeedLimitProvider) {
       case SpeedLimitPrimaryProvider.here:
         return 'HERE Maps';
+      case SpeedLimitPrimaryProvider.remote:
+        return 'Remote';
       case SpeedLimitPrimaryProvider.tomTom:
         return 'TomTom';
       case SpeedLimitPrimaryProvider.mapbox:
@@ -181,6 +220,8 @@ class PreferencesManager {
     switch (resolvedPrimarySpeedLimitProvider) {
       case SpeedLimitPrimaryProvider.here:
         return 'HERE Maps';
+      case SpeedLimitPrimaryProvider.remote:
+        return 'Remote';
       case SpeedLimitPrimaryProvider.tomTom:
         return 'TomTom';
       case SpeedLimitPrimaryProvider.mapbox:
@@ -189,17 +230,6 @@ class PreferencesManager {
         return 'HERE Maps';
     }
   }
-
-  /// `false` if key never written; Edge is used only when true and the build has Supabase configured.
-  bool get useRemoteSpeedApi {
-    if (!AppConfig.useRemoteHere) return false;
-    if (!_prefs.containsKey(_kUseRemoteSpeedApi)) {
-      return false;
-    }
-    return _prefs.getBool(_kUseRemoteSpeedApi) ?? false;
-  }
-
-  set useRemoteSpeedApi(bool v) => _prefs.setBool(_kUseRemoteSpeedApi, v);
 
   /// Speed-limit CSV / HTTP logging is always enabled (no user toggle).
   bool get logSpeedFetchesToFile => true;

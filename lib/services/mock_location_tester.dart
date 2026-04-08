@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:geolocator/geolocator.dart';
 
 import '../core/android_location_compat.dart';
-import '../engine/geo_coordinate.dart';
+import '../engine/shared/geo_coordinate.dart';
 
 /// Emits interpolated [Position] fixes along route vertices for road-test simulation.
 class MockLocationTester {
