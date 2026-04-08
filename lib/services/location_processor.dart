@@ -14,8 +14,7 @@ import '../logging/speed_limit_api_request_logger.dart';
 import '../engine/annotation_section_speed_model.dart';
 import '../engine/here_section_speed_model.dart';
 import '../engine/section_walk_along_continuity.dart';
-import '../engine/speed_limit_gates.dart';
-import '../engine/speed_limit_stabilizer.dart';
+import '../engine/here_downward_limit_debouncer.dart';
 import '../models/road_segment.dart';
 import '../models/speed_limit_data.dart';
 import '../logging/speed_limit_logging_context.dart';
@@ -38,9 +37,9 @@ import 'speed_limit_aggregator.dart';
 /// `HEADING_UTURN_MIN_MPH` 12, `U_TURN_HEADING_DELTA_DEG` 125,
 /// `MODERATE_TURN_HEADING_DELTA_DEG` 45, `MODERATE_TURN_HEADING_COOLDOWN_MS` 4000.
 ///
-/// **Primary HERE:** [HereSectionSpeedModel], sticky segment, Edge/local HERE network — limit in [_applyPrimaryResolvedLimit].
+/// **Primary HERE:** [HereSectionSpeedModel], sticky segment, Edge/local HERE network — limit in [_applyPrimaryResolvedLimit] with [HereDownwardLimitDebouncer].
 ///
-/// **Primary TomTom or Mapbox:** [AnnotationSectionSpeedModel] from the corresponding [TomTomSpeedProvider] / [MapboxSpeedProvider] fetch; same section-walk projection.
+/// **Primary TomTom or Mapbox:** [AnnotationSectionSpeedModel] from the corresponding [TomTomSpeedProvider] / [MapboxSpeedProvider] fetch; same section-walk projection, no HERE downward debouncer.
 ///
 /// **Secondary** providers: async fetches + along-polyline cache refresh only (no primary limit).
 class LocationProcessor {
@@ -50,6 +49,7 @@ class LocationProcessor {
     required this.tomTom,
     required this.mapbox,
     required this.onSpeedUpdate,
+    this.onSecondaryVendorDataUpdated,
   });
 
   final PreferencesManager preferencesManager;
@@ -59,6 +59,9 @@ class LocationProcessor {
 
   /// Called after speed/limit updates so the owner can refresh UI, audio, and overlay in one place.
   final void Function(double vehicleSpeedMph, double? speedLimitMph) onSpeedUpdate;
+
+  /// Called when secondary HERE compare mph updates (async; not every [onSpeedUpdate]).
+  final void Function()? onSecondaryVendorDataUpdated;
 
   int get _primary => preferencesManager.resolvedPrimarySpeedLimitProvider;
   bool get _primaryHere => _primary == SpeedLimitPrimaryProvider.here;
@@ -71,14 +74,7 @@ class LocationProcessor {
   double? _currentSpeedLimitMph;
   int _speedFetchGeneration = 0;
 
-  final _speedLimitStabilizer = SpeedLimitStabilizer(windowSize: SpeedLimitStabilizer.defaultWindow);
-  final _materialChangeGate = SpeedLimitMaterialChangeGate();
-  final _smallUpGate = SpeedLimitSmallUpGate();
-  final _moderateDownGate = SpeedLimitModerateDownGate();
-
-  String? _lastRouteContextKey;
   String? _lastHereSegmentKey;
-  int? _lastHereRawMph;
 
   bool _logHeadingInvalidateForDisplayTrace = false;
   int? _lastLoggedDisplayLimitMph;
@@ -91,7 +87,7 @@ class LocationProcessor {
   AnnotationSectionSpeedModel? _tomtomRouteModel;
   AnnotationSectionSpeedModel? _mapboxRouteModel;
 
-  final _downwardLimitDebouncer = DownwardLimitDebouncer();
+  final _hereDownwardLimitDebouncer = HereDownwardLimitDebouncer();
 
   double? _lastRouteHeadingDeg;
   int _lastModerateHeadingInvalidateUtcMs = 0;
@@ -123,11 +119,19 @@ class LocationProcessor {
   Position? _pendingMapboxCompareFetchLocation;
   Position? _lastMapboxCompareFetchLocation;
 
+  /// When TomTom/Mapbox is primary: secondary HERE compare mph ([fetchHereMapsOnly]).
+  int? _hereCompareMph;
+  int _hereCompareSustainedStartUtcMs = 0;
+  bool _pendingRelaxedFirstHereCompareFetch = true;
+  bool _hereCompareFetchInFlight = false;
+  Position? _pendingHereCompareFetchLocation;
+  Position? _lastHereCompareFetchLocation;
+
+  /// HERE mph for UI when TomTom or Mapbox is primary; null when HERE is primary (use main [onSpeedUpdate] limit).
+  int? get hereSecondaryCompareMph => _primaryHere ? null : _hereCompareMph;
+
   bool useLocalHereForAlerts() =>
       !AppConfig.useRemoteHere || !preferencesManager.useRemoteSpeedApi;
-
-  bool shouldApplyLocalStabilizer() =>
-      useLocalHereForAlerts() && preferencesManager.useLocalSpeedStabilizer;
 
   (int?, int?) _vendorPeekMphForLogs() {
     if (!preferencesManager.isTomTomApiEnabled &&
@@ -151,6 +155,8 @@ class LocationProcessor {
       _pendingTomTomCompareFetchLocation = null;
       _mapboxCompareFetchInFlight = false;
       _pendingMapboxCompareFetchLocation = null;
+      _hereCompareFetchInFlight = false;
+      _pendingHereCompareFetchLocation = null;
       _tomtomRouteModel = null;
       _mapboxRouteModel = null;
     }
@@ -160,6 +166,7 @@ class LocationProcessor {
     _pendingRelaxedFirstFetch = true;
     _pendingRelaxedFirstTomTomCompareFetch = true;
     _pendingRelaxedFirstMapboxCompareFetch = true;
+    _pendingRelaxedFirstHereCompareFetch = true;
     _lastProcessedLocation = null;
   }
 
@@ -201,15 +208,18 @@ class LocationProcessor {
     _lastApiFetchLocation = null;
     _lastTomTomCompareFetchLocation = null;
     _lastMapboxCompareFetchLocation = null;
+    _lastHereCompareFetchLocation = null;
     _pendingRelaxedFirstTomTomCompareFetch = true;
     _pendingRelaxedFirstMapboxCompareFetch = true;
+    _pendingRelaxedFirstHereCompareFetch = true;
+    _hereCompareSustainedStartUtcMs = 0;
     _currentSpeedLimitMph = null;
     _stickyRoadSegment = null;
     _hereSectionSpeedModel = null;
     _sectionWalkAlongContinuity.reset();
     _tomtomRouteModel = null;
     _mapboxRouteModel = null;
-    _downwardLimitDebouncer.reset();
+    _hereDownwardLimitDebouncer.reset();
     _lastRouteHeadingDeg = null;
     _lastModerateHeadingInvalidateUtcMs = 0;
     _forceImmediateLimitCommit = false;
@@ -220,15 +230,12 @@ class LocationProcessor {
     _pendingTomTomCompareFetchLocation = null;
     _mapboxCompareFetchInFlight = false;
     _pendingMapboxCompareFetchLocation = null;
+    _hereCompareFetchInFlight = false;
+    _pendingHereCompareFetchLocation = null;
+    _hereCompareMph = null;
     tomTom.clearStickyCacheOnly();
     mapbox.clearStickyCacheOnly();
-    _lastRouteContextKey = null;
     _lastHereSegmentKey = null;
-    _lastHereRawMph = null;
-    _speedLimitStabilizer.clear();
-    _materialChangeGate.reset();
-    _smallUpGate.reset();
-    _moderateDownGate.reset();
     _gpsTrajectoryBuffer.clear();
     _logHeadingInvalidateForDisplayTrace = false;
     _lastLoggedDisplayLimitMph = null;
@@ -265,12 +272,17 @@ class LocationProcessor {
     }
   }
 
-  /// Secondary TomTom/Mapbox network fetches + along-polyline cache refresh. Primary fetch runs in the main tail.
+  /// Secondary HERE / TomTom / Mapbox network fetches + along-polyline cache refresh. Primary fetch runs in the main tail.
   void _enqueueCompareSideEffectsForLocationTick(
     Position location,
     double rawMph,
     double? headingForPolyline,
   ) {
+    if (!_primaryHere) {
+      unawaited(
+        _maybeRequestHereCompareFetch(location, rawMph, headingForPolyline),
+      );
+    }
     if (!_primaryTomTom) {
       unawaited(
         _maybeRequestTomTomCompareFetch(location, rawMph, headingForPolyline),
@@ -298,6 +310,7 @@ class LocationProcessor {
     _updateSustainedDrivingAnchor(location, rawMph);
     _updateTomTomCompareSustainedAnchor(location, rawMph);
     _updateMapboxCompareSustainedAnchor(location, rawMph);
+    _updateHereCompareSustainedAnchor(location, rawMph);
 
     _gpsTrajectoryBuffer.add(location, speedMps);
     SpeedLimitLoggingContext.updateFromPosition(
@@ -320,6 +333,7 @@ class LocationProcessor {
     // ran during simulation when bearing jumped each route vertex).
     _updateTomTomCompareSustainedAnchor(location, rawMph);
     _updateMapboxCompareSustainedAnchor(location, rawMph);
+    _updateHereCompareSustainedAnchor(location, rawMph);
     _enqueueCompareSideEffectsForLocationTick(
       location,
       rawMph,
@@ -623,6 +637,20 @@ class LocationProcessor {
     }
   }
 
+  void _updateHereCompareSustainedAnchor(Position location, double rawMph) {
+    if (_primaryHere || !preferencesManager.isHereApiEnabled) {
+      _hereCompareSustainedStartUtcMs = 0;
+      return;
+    }
+    if (rawMph >= DRIVING_MIN_MPH_FOR_FETCH) {
+      if (_hereCompareSustainedStartUtcMs == 0) {
+        _hereCompareSustainedStartUtcMs = location.timestamp.millisecondsSinceEpoch;
+      }
+    } else {
+      _hereCompareSustainedStartUtcMs = 0;
+    }
+  }
+
   bool _sustainedDrivingEligible(Position location, double rawMph) {
     if (rawMph < DRIVING_MIN_MPH_FOR_FETCH) return false;
     if (_drivingSustainedStartUtcMs == 0) return false;
@@ -673,12 +701,6 @@ class LocationProcessor {
       return;
     }
     _enqueueHereFetch(location, displayMph);
-  }
-
-  String _routeContextKey(int? functionalClass, String? segmentKey) {
-    if (functionalClass != null) return 'fc:$functionalClass';
-    if (segmentKey != null) return 'seg:$segmentKey';
-    return 'na';
   }
 
   /// Local distance/heading thresholds for primary fetch (HERE local vs remote Edge; TomTom/Mapbox always local keys).
@@ -773,6 +795,16 @@ class LocationProcessor {
         requiredMs;
   }
 
+  bool _hereCompareSustainedEligible(Position location, double rawMph) {
+    if (rawMph < DRIVING_MIN_MPH_FOR_FETCH) return false;
+    if (_hereCompareSustainedStartUtcMs == 0) return false;
+    final requiredMs = _pendingRelaxedFirstHereCompareFetch
+        ? RELAXED_FIRST_COMPARE_FETCH_SUSTAINED_MS
+        : SUSTAINED_DRIVING_MS;
+    return (location.timestamp.millisecondsSinceEpoch - _hereCompareSustainedStartUtcMs) >=
+        requiredMs;
+  }
+
   bool _tomtomCompareHasUsableRouteCache() {
     final m = _tomtomRouteModel;
     return m != null && !m.isExpired();
@@ -810,6 +842,18 @@ class LocationProcessor {
       _lastMapboxCompareFetchLocation,
       minDisp,
       SpeedProviderConstants.mapboxSecondaryNetworkMinHeadingChangeDeg,
+    );
+  }
+
+  bool _shouldTriggerHereCompareFetch(Position location, double rawMph) {
+    if (_primaryHere || !preferencesManager.isHereApiEnabled) return false;
+    if (rawMph < DRIVING_MIN_MPH_FOR_FETCH) return false;
+    if (!_hereCompareSustainedEligible(location, rawMph)) return false;
+    return _sufficientDisplacementSinceLastForNetworkFetch(
+      location,
+      _lastHereCompareFetchLocation,
+      MIN_DISPLACEMENT_SINCE_FETCH_M,
+      MIN_HEADING_CHANGE_FOR_FETCH_DEG,
     );
   }
 
@@ -855,6 +899,50 @@ class LocationProcessor {
   ) async {
     if (!_shouldTriggerMapboxCompareFetch(location, rawMph)) return;
     await _enqueueMapboxCompareFetch(location, headingDeg);
+  }
+
+  Future<void> _maybeRequestHereCompareFetch(
+    Position location,
+    double rawMph,
+    double? headingDeg,
+  ) async {
+    if (!_shouldTriggerHereCompareFetch(location, rawMph)) return;
+    await _enqueueHereCompareFetch(location, headingDeg);
+  }
+
+  Future<void> _enqueueHereCompareFetch(Position location, double? headingDeg) async {
+    if (_pipelinePaused) return;
+    if (_hereCompareFetchInFlight) {
+      _pendingHereCompareFetchLocation = location;
+      return;
+    }
+    _hereCompareFetchInFlight = true;
+    _pendingRelaxedFirstHereCompareFetch = false;
+    _lastHereCompareFetchLocation = location;
+    final generation = _speedFetchGeneration;
+    try {
+      final data = await speedLimitAggregator.fetchHereMapsOnly(
+        lat: location.latitude,
+        lng: location.longitude,
+        headingDegrees: headingDeg,
+      );
+      if (generation != _speedFetchGeneration) return;
+      if (_primaryHere) return;
+      _hereCompareMph = data.speedLimitMph;
+      onSecondaryVendorDataUpdated?.call();
+    } catch (_) {
+      // Keep previous _hereCompareMph.
+    } finally {
+      _hereCompareFetchInFlight = false;
+      final next = _pendingHereCompareFetchLocation;
+      _pendingHereCompareFetchLocation = null;
+      if (next != null && generation == _speedFetchGeneration) {
+        final nextRaw = _effectiveSpeedMpsAndMph(next).$2;
+        final nextHeading =
+            AndroidLocationCompat.positionBearingIfHasBearing(next);
+        unawaited(_maybeRequestHereCompareFetch(next, nextRaw, nextHeading));
+      }
+    }
   }
 
   void _applyRouteModelsAlongPolyline(
@@ -971,13 +1059,8 @@ class LocationProcessor {
     _sectionWalkAlongContinuity.reset();
     _stickyRoadSegment = null;
     _lastApiFetchLocation = null;
-    _speedLimitStabilizer.clear();
-    _materialChangeGate.reset();
-    _smallUpGate.reset();
-    _moderateDownGate.reset();
-    _lastRouteContextKey = null;
     _pendingRelaxedFirstFetch = true;
-    _downwardLimitDebouncer.reset();
+    _hereDownwardLimitDebouncer.reset();
     _forceImmediateLimitCommit = true;
     _logHeadingInvalidateForDisplayTrace = true;
   }
@@ -1002,10 +1085,20 @@ class LocationProcessor {
     mapbox.clearStickyCacheOnly();
   }
 
+  void _invalidateHereCompareForSharpTurn() {
+    _lastHereCompareFetchLocation = null;
+    _pendingRelaxedFirstHereCompareFetch = true;
+    _hereCompareSustainedStartUtcMs = 0;
+    _hereCompareFetchInFlight = false;
+    _pendingHereCompareFetchLocation = null;
+    _hereCompareMph = null;
+  }
+
   void _invalidateRouteGeometryForSharpTurn() {
     _invalidateHereGeometryForSharpTurn();
     _invalidateTomTomCompareForSharpTurn();
     _invalidateMapboxCompareForSharpTurn();
+    _invalidateHereCompareForSharpTurn();
   }
 
   void _enqueueHereFetch(Position location, double displaySpeedMph) {
@@ -1498,7 +1591,7 @@ class LocationProcessor {
 
   /// Primary speed limit resolution (HERE, TomTom, or Mapbox depending on [PreferencesManager.resolvedPrimarySpeedLimitProvider]).
   ///
-  /// Local [SpeedLimitStabilizer] applies only when the primary is HERE and [shouldApplyLocalStabilizer].
+  /// [HereDownwardLimitDebouncer] applies only when primary is HERE.
   void _applyPrimaryResolvedLimit({
     required Position location,
     required double vehicleSpeedMph,
@@ -1525,84 +1618,27 @@ class LocationProcessor {
       rawForPipeline = curLimit;
     }
 
-    final routeCtx = _routeContextKey(functionalClass, segmentKey);
+    final displayMph = rawForPipeline;
 
-    var displayMph = rawForPipeline;
-    if (_primaryHere && shouldApplyLocalStabilizer()) {
-      if (_lastRouteContextKey != null && routeCtx != _lastRouteContextKey) {
-        _speedLimitStabilizer.clear();
-        _materialChangeGate.reset();
-        _smallUpGate.reset();
-        _moderateDownGate.reset();
-      }
-      _lastRouteContextKey = routeCtx;
-
-      if (segmentKey != null &&
-          _lastHereSegmentKey != null &&
-          segmentKey != _lastHereSegmentKey &&
-          _lastHereRawMph != null &&
-          rawForPipeline == _lastHereRawMph) {
-        _speedLimitStabilizer.clear();
-      }
-
-      final smoothed = _speedLimitStabilizer.pushAndResolve(
-        SpeedStabSample(segmentKey: segmentKey, mph: rawForPipeline),
+    // HERE primary only: debounce downward limit changes. TomTom/Mapbox primary use [displayMph] as-is.
+    final int finalDisplay;
+    if (_primaryHere) {
+      final segmentIdentityChanged =
+          segmentKey != null && _lastHereSegmentKey != null && segmentKey != _lastHereSegmentKey;
+      final immediateForDebounce = _forceImmediateLimitCommit || segmentIdentityChanged;
+      _forceImmediateLimitCommit = false;
+      finalDisplay = _hereDownwardLimitDebouncer.commit(
+        displayMph,
+        location.timestamp.millisecondsSinceEpoch,
+        immediateForDebounce,
       );
-      final currentInt = _currentSpeedLimitMph?.round();
-      if (currentInt == null) {
-        _materialChangeGate.reset();
-        _smallUpGate.reset();
-        _moderateDownGate.reset();
-        displayMph = smoothed;
-      } else if ((rawForPipeline - currentInt).abs() >=
-          SpeedLimitMaterialChangeGate.defaultMaterialDeltaMph) {
-        _smallUpGate.reset();
-        _moderateDownGate.reset();
-        displayMph = _materialChangeGate.applyLargeRaw(rawForPipeline, _currentSpeedLimitMph);
-      } else if (rawForPipeline > currentInt &&
-          (rawForPipeline - currentInt) >= SpeedLimitSmallUpGate.defaultMinBump &&
-          (rawForPipeline - currentInt) < SpeedLimitMaterialChangeGate.defaultMaterialDeltaMph) {
-        _materialChangeGate.reset();
-        _moderateDownGate.reset();
-        displayMph = _smallUpGate.apply(rawForPipeline, _currentSpeedLimitMph, smoothed);
-      } else if (rawForPipeline < currentInt) {
-        final drop = currentInt - rawForPipeline;
-        if (drop >= SpeedLimitModerateDownGate.defaultMinDrop &&
-            drop < SpeedLimitMaterialChangeGate.defaultMaterialDeltaMph) {
-          _materialChangeGate.reset();
-          _smallUpGate.reset();
-          displayMph = _moderateDownGate.apply(rawForPipeline, _currentSpeedLimitMph, smoothed);
-        } else {
-          _materialChangeGate.reset();
-          _smallUpGate.reset();
-          _moderateDownGate.reset();
-          displayMph = smoothed;
-        }
-      } else {
-        _materialChangeGate.reset();
-        _smallUpGate.reset();
-        _moderateDownGate.reset();
-        displayMph = smoothed;
-      }
     } else {
-      _materialChangeGate.reset();
-      _smallUpGate.reset();
-      _moderateDownGate.reset();
-      displayMph = rawForPipeline;
+      _forceImmediateLimitCommit = false;
+      finalDisplay = displayMph;
     }
-
-    final segmentIdentityChanged =
-        segmentKey != null && _lastHereSegmentKey != null && segmentKey != _lastHereSegmentKey;
-    final immediateForDebounce = _forceImmediateLimitCommit || segmentIdentityChanged;
-    _forceImmediateLimitCommit = false;
-    final finalDisplay = _downwardLimitDebouncer.commit(
-      displayMph,
-      location.timestamp.millisecondsSinceEpoch,
-      immediateForDebounce,
-    );
     _currentSpeedLimitMph = finalDisplay.toDouble();
     SpeedLimitLoggingContext.setHereCompareMphCell(rawForPipeline, hereLimitFromNetworkFetch);
-    if (logCompareRow && preferencesManager.logSpeedFetchesToFile) {
+    if (logCompareRow) {
       final peek = _vendorPeekMphForLogs();
       unawaited(
         SpeedFetchDebugLogger.append(
@@ -1636,7 +1672,6 @@ class LocationProcessor {
     );
     onSpeedUpdate(vehicleSpeedMph, _currentSpeedLimitMph);
     _lastHereSegmentKey = segmentKey;
-    _lastHereRawMph = rawForPipeline;
   }
 
   void _logDisplayLimitChangeIfChanged({
@@ -1646,7 +1681,6 @@ class LocationProcessor {
     required int finalDisplay,
     String? segmentKey,
   }) {
-    if (!preferencesManager.logSpeedFetchesToFile) return;
     final headingInv = _logHeadingInvalidateForDisplayTrace;
     _logHeadingInvalidateForDisplayTrace = false;
     final prev = _lastLoggedDisplayLimitMph;
@@ -1696,7 +1730,7 @@ class LocationProcessor {
   static const int SANITY_MAX_DROP_WHILE_FAST_MPH = 28;
 
   static const String _reasonHereFetchSuccessRow =
-      'HERE fetch completed with a usable mph; row shows raw/display after stabilizer rules.';
+      'Primary fetch completed with a usable mph; row shows raw/display after downward debouncer.';
   static const String _reasonHereFetchNoUsableMph =
       'HERE fetch completed but returned no usable mph; see here columns and note; prior limit kept if any.';
   static const String _reasonHereFetchException =

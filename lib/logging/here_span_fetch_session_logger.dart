@@ -23,7 +23,6 @@ class HereSpanFetchSessionLogger {
     Map<String, dynamic> routeRoot,
   ) {
     if (!SpeedDebugLogSessionHolder.isSessionActive()) return;
-    if (!preferencesManager.logSpeedFetchesToFile) return;
     final spanMph = _spanSpeedMphList(routeRoot);
     if (spanMph.isEmpty) return;
     final spanDetails = _spanDetailList(routeRoot);

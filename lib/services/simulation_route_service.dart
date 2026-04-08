@@ -9,12 +9,14 @@ import 'preferences_manager.dart';
 // Preset simulation O/D strings (`lat,lng` comma form).
 
 const String kSimulationDefaultOriginLatLng = '29.5445,-95.0205';
+/// Preset 0 origin (first simulation destination option).
+const String kPresetSimKemahSeafoam618LatLng = '29.526066,-95.015461';
+/// 2218 Dove Haven Ln, League City, TX 77573 (approximate; same corridor as legacy Dove preset).
+const String kPresetSimLeagueCityDove2218LatLng = '29.5140547,-95.0674492';
 const String kPresetSimDoveLatLng = '29.5140547,-95.0674492';
 const String kPresetSimNrgLatLng = '29.6845,-95.4104';
 const String kPresetSimElcaminoLatLng = '29.5500637,-95.1106676';
 const String kPresetSimDoveHavenStartLatLng = kPresetSimDoveLatLng;
-const String kPresetSimIslaLeagueOriginLatLng = '29.5262731,-95.0114404';
-const String kPresetSimIslaLeagueDestLatLng = '29.5240499,-95.0173834';
 
 /// Parses `"lat,lng"` into coordinates or returns null if invalid.
 ({double lat, double lng})? parseLatLngComma(String s) {
@@ -31,14 +33,14 @@ const String kPresetSimIslaLeagueDestLatLng = '29.5240499,-95.0173834';
 String simulationRouteOriginLatLng(PreferencesManager preferencesManager) {
   final preset = preferencesManager.simulationDestinationPreset;
   switch (preset) {
+    case 0:
+      return kPresetSimKemahSeafoam618LatLng;
     case 2:
       return kPresetSimDoveHavenStartLatLng;
     case 3:
       return kPresetSimElcaminoLatLng;
     case 5:
       return preferencesManager.simulationRoutingOriginLatLng.trim();
-    case 6:
-      return kPresetSimIslaLeagueOriginLatLng;
     default:
       return kSimulationDefaultOriginLatLng;
   }
@@ -51,18 +53,17 @@ String simulationRouteDestinationLatLngString(
   final preset = preferencesManager.simulationDestinationPreset;
   switch (preset) {
     case 0:
-    case 3:
-      return kPresetSimDoveLatLng;
+      return kPresetSimLeagueCityDove2218LatLng;
     case 1:
       return kPresetSimNrgLatLng;
     case 2:
       return kPresetSimElcaminoLatLng;
+    case 3:
+      return kPresetSimDoveLatLng;
     case 4:
       return preferencesManager.simulationCustomDestinationLatLng.trim();
     case 5:
       return preferencesManager.simulationRoutingDestinationLatLng.trim();
-    case 6:
-      return kPresetSimIslaLeagueDestLatLng;
     default:
       return preferencesManager.simulationCustomDestinationLatLng.trim();
   }

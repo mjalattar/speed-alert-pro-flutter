@@ -67,7 +67,6 @@ class SpeedLimitApiRequestLogger {
     String note = '',
     String requestReasonHuman = '',
   }) async {
-    if (!preferencesManager.logSpeedFetchesToFile) return;
     await append(
       preferencesManager: preferencesManager,
       category: category,
@@ -679,7 +678,7 @@ class SpeedLimitApiRequestLogger {
       ..write('${AppConfig.useRemoteHere ? '1' : '0'},')
       ..write('${preferencesManager.useRemoteSpeedApi ? '1' : '0'},')
       ..write('${preferencesManager.isHereApiEnabled ? '1' : '0'},')
-      ..write('${preferencesManager.useLocalSpeedStabilizer ? '1' : '0'},')
+      ..write('0,')
       ..write('${CsvFormatting.escape(SpeedLimitLoggingContext.hereAlertPathForCsv())},')
       ..write('${CsvFormatting.escape(fetchGeneration)},')
       ..write('${CsvFormatting.escape(SpeedLimitLoggingContext.appSessionId)},')

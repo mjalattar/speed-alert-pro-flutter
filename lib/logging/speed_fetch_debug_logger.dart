@@ -50,7 +50,6 @@ class SpeedFetchDebugLogger {
   }) async {
     final session = SpeedDebugLogSessionHolder.activeSession();
     if (session == SpeedDebugLogSession.none) return;
-    if (!preferencesManager.logSpeedFetchesToFile) return;
     final now = utcNow();
     final stabilizedFlag = rawMph != displayMph;
     await SpeedLimitApiRequestLogger.appendSpeedFetchMirror(

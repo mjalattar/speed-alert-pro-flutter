@@ -72,7 +72,9 @@ class _SimulationDestinationSettingsState
         Text('Simulation destination', style: Theme.of(context).textTheme.titleSmall),
         const SizedBox(height: 8),
         RadioListTile<int>(
-          title: const Text('League City (Dove Haven Ln)'),
+          title: const Text(
+            '618 Seafoam Ln, Kemah, TX → 2218 Dove Haven Ln, League City, TX',
+          ),
           value: 0,
           groupValue: preferencesManager.simulationDestinationPreset,
           onChanged: (v) {
@@ -121,15 +123,6 @@ class _SimulationDestinationSettingsState
         RadioListTile<int>(
           title: const Text('Source & destination coordinates'),
           value: 5,
-          groupValue: preferencesManager.simulationDestinationPreset,
-          onChanged: (v) {
-            if (v == null) return;
-            _setPreset(v);
-          },
-        ),
-        RadioListTile<int>(
-          title: const Text('League City Pkwy → Sandy Bay Ln (Isla Vista Dr)'),
-          value: 6,
           groupValue: preferencesManager.simulationDestinationPreset,
           onChanged: (v) {
             if (v == null) return;

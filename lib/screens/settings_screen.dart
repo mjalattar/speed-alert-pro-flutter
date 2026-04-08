@@ -216,32 +216,6 @@ class SettingsScreen extends ConsumerWidget {
             },
           ),
           Text(
-            'Local HERE tuning',
-            style: Theme.of(context).textTheme.titleSmall,
-          ),
-          SwitchListTile(
-            title: const Text('Local speed stabilizer'),
-            subtitle: const Text(
-              'Applies when not using remote Edge for HERE alerts.',
-            ),
-            value: preferencesManager.useLocalSpeedStabilizer,
-            onChanged: (v) {
-              preferencesManager.useLocalSpeedStabilizer = v;
-              ref.read(prefsRevisionProvider.notifier).state++;
-            },
-          ),
-          SwitchListTile(
-            title: const Text('Log speed fetches to file'),
-            subtitle: const Text(
-              'Unified CSV + HTTP request rows when driving or simulating.',
-            ),
-            value: preferencesManager.logSpeedFetchesToFile,
-            onChanged: (v) {
-              preferencesManager.logSpeedFetchesToFile = v;
-              ref.read(prefsRevisionProvider.notifier).state++;
-            },
-          ),
-          Text(
             'Main speed limit (display + alerts)',
             style: Theme.of(context).textTheme.titleSmall,
           ),
@@ -255,6 +229,8 @@ class SettingsScreen extends ConsumerWidget {
             onChanged: (v) {
               if (v != null) {
                 preferencesManager.primarySpeedLimitProvider = v;
+                // Main limit cannot use a disabled API — turn on the matching provider.
+                preferencesManager.isHereApiEnabled = true;
                 ref.read(prefsRevisionProvider.notifier).state++;
               }
             },
@@ -266,6 +242,7 @@ class SettingsScreen extends ConsumerWidget {
             onChanged: (v) {
               if (v != null) {
                 preferencesManager.primarySpeedLimitProvider = v;
+                preferencesManager.isTomTomApiEnabled = true;
                 ref.read(prefsRevisionProvider.notifier).state++;
               }
             },
@@ -277,12 +254,13 @@ class SettingsScreen extends ConsumerWidget {
             onChanged: (v) {
               if (v != null) {
                 preferencesManager.primarySpeedLimitProvider = v;
+                preferencesManager.isMapboxApiEnabled = true;
                 ref.read(prefsRevisionProvider.notifier).state++;
               }
             },
           ),
           Text(
-            'API providers (enable keys you need; main limit uses resolved choice above if enabled)',
+            'API providers (choosing a main source above enables that provider here)',
             style: Theme.of(context).textTheme.titleSmall,
           ),
           SwitchListTile(

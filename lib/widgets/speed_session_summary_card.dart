@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../core/constants.dart';
 
-/// Speed / limit summary card: primary limit + optional TomTom / Mapbox columns.
+/// Speed / limit summary card: main limit for the selected primary provider + up to two **other**
+/// providers listed below (never duplicates the primary in the list).
 class SpeedSessionSummaryCard extends StatefulWidget {
   const SpeedSessionSummaryCard({
     super.key,
@@ -13,13 +14,14 @@ class SpeedSessionSummaryCard extends StatefulWidget {
     required this.simulatedSpeedMph,
     required this.limitMph,
     required this.resolvedPrimarySpeedLimitProvider,
+    required this.hereMph,
     required this.tomTomMph,
     required this.mapboxMph,
     required this.alertThresholdMph,
     required this.suppressAlertsUnder15Mph,
   });
 
-  /// Label for the main limit column (matches [PreferencesManager.primarySpeedLimitProviderDisplayName]).
+  /// Label for the main limit column (use [PreferencesManager.resolvedPrimarySpeedLimitProviderDisplayName]).
   final String primaryProviderLabel;
 
   final bool isTestingTab;
@@ -28,8 +30,11 @@ class SpeedSessionSummaryCard extends StatefulWidget {
   final int simulatedSpeedMph;
   final double? limitMph;
 
-  /// [PreferencesManager.resolvedPrimarySpeedLimitProvider] — drives primary vs secondary labels for TomTom/Mapbox rows.
+  /// [PreferencesManager.resolvedPrimarySpeedLimitProvider] — which vendor is omitted from the list below.
   final int resolvedPrimarySpeedLimitProvider;
+
+  /// HERE mph (main limit when HERE is primary; secondary compare when TomTom/Mapbox is primary).
+  final int? hereMph;
 
   final int? tomTomMph;
   final int? mapboxMph;
@@ -185,22 +190,7 @@ class _SpeedSessionSummaryCardState extends State<SpeedSessionSummaryCard>
                   ],
                 ),
                 const SizedBox(height: 12),
-                _providerRow(
-                  context,
-                  'TomTom',
-                  widget.tomTomMph,
-                  fg,
-                  isPrimary: widget.resolvedPrimarySpeedLimitProvider ==
-                      SpeedLimitPrimaryProvider.tomTom,
-                ),
-                _providerRow(
-                  context,
-                  'Mapbox',
-                  widget.mapboxMph,
-                  fg,
-                  isPrimary: widget.resolvedPrimarySpeedLimitProvider ==
-                      SpeedLimitPrimaryProvider.mapbox,
-                ),
+                ..._secondaryProviderRows(context, fg),
               ],
             ),
           ),
@@ -209,22 +199,36 @@ class _SpeedSessionSummaryCardState extends State<SpeedSessionSummaryCard>
     );
   }
 
-  Widget _providerRow(
+  /// Rows for the two providers that are **not** the main (primary) source.
+  List<Widget> _secondaryProviderRows(BuildContext context, Color fg) {
+    final primary = widget.resolvedPrimarySpeedLimitProvider;
+    final rows = <Widget>[];
+    if (primary != SpeedLimitPrimaryProvider.here) {
+      rows.add(_secondaryProviderRow(context, 'HERE Maps', widget.hereMph, fg));
+    }
+    if (primary != SpeedLimitPrimaryProvider.tomTom) {
+      rows.add(_secondaryProviderRow(context, 'TomTom', widget.tomTomMph, fg));
+    }
+    if (primary != SpeedLimitPrimaryProvider.mapbox) {
+      rows.add(_secondaryProviderRow(context, 'Mapbox', widget.mapboxMph, fg));
+    }
+    return rows;
+  }
+
+  Widget _secondaryProviderRow(
     BuildContext context,
     String label,
     int? mph,
-    Color fg, {
-    required bool isPrimary,
-  }) {
+    Color fg,
+  ) {
     final hasMph = mph != null;
-    final role = isPrimary ? 'primary' : 'secondary';
     return Padding(
       padding: const EdgeInsets.only(top: 6),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(
-            '$label · $role',
+            '$label · secondary',
             style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                   color: fg.withValues(alpha: 0.7),
                 ),

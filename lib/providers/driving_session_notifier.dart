@@ -44,6 +44,7 @@ class DrivingSessionState {
     this.lastFetchUtc,
     this.tomTomMph,
     this.mapboxMph,
+    this.hereCompareMph,
     this.simulatedSpeedMph = 30,
     this.drivingSessionPipelineUpdates = 0,
     this.simulationRoutePolyline = const [],
@@ -61,6 +62,9 @@ class DrivingSessionState {
   final DateTime? lastFetchUtc;
   final int? tomTomMph;
   final int? mapboxMph;
+
+  /// HERE mph when TomTom or Mapbox is primary (secondary HERE compare from [LocationProcessor]).
+  final int? hereCompareMph;
 
   /// Synthetic route simulation speed ([MockLocationTester] +/- adjustment).
   final int simulatedSpeedMph;
@@ -95,6 +99,7 @@ class DrivingSessionState {
     DateTime? lastFetchUtc,
     int? tomTomMph,
     int? mapboxMph,
+    int? hereCompareMph,
     int? simulatedSpeedMph,
     int? drivingSessionPipelineUpdates,
     List<GeoCoordinate>? simulationRoutePolyline,
@@ -112,6 +117,7 @@ class DrivingSessionState {
       lastFetchUtc: lastFetchUtc ?? this.lastFetchUtc,
       tomTomMph: tomTomMph ?? this.tomTomMph,
       mapboxMph: mapboxMph ?? this.mapboxMph,
+      hereCompareMph: hereCompareMph ?? this.hereCompareMph,
       simulatedSpeedMph: simulatedSpeedMph ?? this.simulatedSpeedMph,
       drivingSessionPipelineUpdates:
           drivingSessionPipelineUpdates ?? this.drivingSessionPipelineUpdates,
@@ -194,15 +200,28 @@ class DrivingSessionNotifier extends StateNotifier<DrivingSessionState> {
   void _syncVendorMphFromCaches() {
     final tt = _tomTom;
     final mb = _mapbox;
-    if (tt == null || mb == null) return;
+    final proc = _processor;
+    final hereSecondary = proc?.hereSecondaryCompareMph;
+
     final pm = ref.read(preferencesProvider).preferencesManager;
+    if (tt == null || mb == null) {
+      if (proc != null) {
+        state = state.copyWith(hereCompareMph: hereSecondary);
+      }
+      return;
+    }
     if (!pm.isTomTomApiEnabled && !pm.isMapboxApiEnabled) {
-      state = state.copyWith(tomTomMph: null, mapboxMph: null);
+      state = state.copyWith(
+        tomTomMph: null,
+        mapboxMph: null,
+        hereCompareMph: hereSecondary,
+      );
       return;
     }
     state = state.copyWith(
       tomTomMph: pm.isTomTomApiEnabled ? tt.peekCached()?.speedLimitMph : null,
       mapboxMph: pm.isMapboxApiEnabled ? mb.peekCached()?.speedLimitMph : null,
+      hereCompareMph: hereSecondary,
     );
   }
 
@@ -294,6 +313,7 @@ class DrivingSessionNotifier extends StateNotifier<DrivingSessionState> {
       speedLimitAggregator: ref.read(speedLimitAggregatorProvider),
       tomTom: tomTom,
       mapbox: mapbox,
+      onSecondaryVendorDataUpdated: _syncVendorMphFromCaches,
       onSpeedUpdate: (vehicleMph, limitMph) {
         var d = state.drivingSessionPipelineUpdates;
         if (!_simulationActive && state.isTracking) {
@@ -307,7 +327,7 @@ class DrivingSessionNotifier extends StateNotifier<DrivingSessionState> {
           drivingSessionPipelineUpdates: d,
           hereData: limitMph != null
               ? SpeedLimitData(
-                  provider: pm.primarySpeedLimitProviderDisplayName,
+                  provider: pm.resolvedPrimarySpeedLimitProviderDisplayName,
                   speedLimitMph: limitMph.round(),
                   confidence: ConfidenceLevel.high,
                   source: 'LocationProcessor',

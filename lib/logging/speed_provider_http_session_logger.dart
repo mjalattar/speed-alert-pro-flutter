@@ -25,7 +25,6 @@ class SpeedProviderHttpSessionLogger {
     required int httpCode,
     String note = '',
   }) {
-    if (!preferencesManager.logSpeedFetchesToFile) return;
     if (!SpeedDebugLogSessionHolder.isSessionActive()) return;
     final row = _HttpRow(
       utc: SpeedLimitApiRequestLogger.utcNow(),

@@ -13,7 +13,7 @@ class SpeedDebugLogAutoExporter {
     final prefs = speedAlertLoggingPreferences;
     if (prefs == null) return;
     try {
-      if (Platform.isAndroid && prefs.logSpeedFetchesToFile) {
+      if (Platform.isAndroid) {
         await SpeedFetchDebugLogger.copySessionLogToPublicDownloads(
           SpeedDebugLogSession.simulation,
         );

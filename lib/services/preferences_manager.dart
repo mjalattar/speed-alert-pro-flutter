@@ -26,9 +26,9 @@ class PreferencesManager {
   static const _kApiMapbox = 'api_mapbox_enabled';
   /// [SpeedLimitPrimaryProvider.here], [SpeedLimitPrimaryProvider.tomTom], or [SpeedLimitPrimaryProvider.mapbox].
   static const _kPrimarySpeedLimitProvider = 'primary_speed_limit_provider';
+  /// One-shot: turn on the API switch for the stored main provider if it was still off (legacy mismatch).
+  static const _kPrimaryApiFlagsAlignedV1 = 'prefs_primary_api_flags_aligned_v1';
   static const _kUseRemoteSpeedApi = 'use_remote_speed_api';
-  static const _kUseLocalStabilizer = 'use_local_speed_stabilizer';
-  static const _kLogSpeedFetches = 'log_speed_fetches';
   static const _kUiThemeMode = 'ui_theme_mode';
   static const _kSuppressUnder15 = 'suppress_alerts_under_15_mph';
   static const _kOverlayHudMinimized = 'overlay_hud_minimized';
@@ -52,6 +52,7 @@ class PreferencesManager {
     'api_tomtom_enabled',
     'api_mapbox_enabled',
     'primary_speed_limit_provider',
+    'prefs_primary_api_flags_aligned_v1',
     'sim_dest_preset',
     'sim_custom_dest_query',
     'sim_custom_dest_latlng',
@@ -59,8 +60,6 @@ class PreferencesManager {
     'sim_routing_dest_latlng',
     'overlay_hud_minimized',
     'use_remote_speed_api',
-    'use_local_speed_stabilizer',
-    'log_speed_fetches',
     'ui_theme_mode',
     'suppress_alerts_under_15_mph',
     'flutter_driving_tracking_active',
@@ -83,7 +82,26 @@ class PreferencesManager {
 
   static Future<PreferencesManager> open() async {
     final p = await SharedPreferences.getInstance();
-    return PreferencesManager(p);
+    final m = PreferencesManager(p);
+    await m._alignPrimaryProviderApiFlagsOnce();
+    return m;
+  }
+
+  /// If user had chosen TomTom/Mapbox as main but left that API disabled, [resolvedPrimarySpeedLimitProvider]
+  /// fell back to HERE. Enable the matching API once so the choice takes effect.
+  Future<void> _alignPrimaryProviderApiFlagsOnce() async {
+    if (_prefs.getBool(_kPrimaryApiFlagsAlignedV1) == true) return;
+    final want = primarySpeedLimitProvider;
+    if (want == SpeedLimitPrimaryProvider.here && !isHereApiEnabled) {
+      isHereApiEnabled = true;
+    }
+    if (want == SpeedLimitPrimaryProvider.tomTom && !isTomTomApiEnabled) {
+      isTomTomApiEnabled = true;
+    }
+    if (want == SpeedLimitPrimaryProvider.mapbox && !isMapboxApiEnabled) {
+      isMapboxApiEnabled = true;
+    }
+    await _prefs.setBool(_kPrimaryApiFlagsAlignedV1, true);
   }
 
   int get alertThresholdMph => _prefs.getInt(_kAlertThreshold) ?? 5;
@@ -138,7 +156,24 @@ class PreferencesManager {
   }
 
   /// Short label for UI (speed card, session [SpeedLimitData].provider, etc.).
+  /// Uses the **selected** main provider so the label updates as soon as the user changes the setting
+  /// ([resolvedPrimarySpeedLimitProvider] still drives which API actually powers alerts).
   String get primarySpeedLimitProviderDisplayName {
+    switch (primarySpeedLimitProvider) {
+      case SpeedLimitPrimaryProvider.here:
+        return 'HERE Maps';
+      case SpeedLimitPrimaryProvider.tomTom:
+        return 'TomTom';
+      case SpeedLimitPrimaryProvider.mapbox:
+        return 'Mapbox';
+      default:
+        return 'HERE Maps';
+    }
+  }
+
+  /// Label for the **effective** main provider (after API enable checks). Use for the main speed limit
+  /// headline so it matches [resolvedPrimarySpeedLimitProvider] and the primary/secondary rows below.
+  String get resolvedPrimarySpeedLimitProviderDisplayName {
     switch (resolvedPrimarySpeedLimitProvider) {
       case SpeedLimitPrimaryProvider.here:
         return 'HERE Maps';
@@ -162,13 +197,8 @@ class PreferencesManager {
 
   set useRemoteSpeedApi(bool v) => _prefs.setBool(_kUseRemoteSpeedApi, v);
 
-  bool get useLocalSpeedStabilizer =>
-      _prefs.getBool(_kUseLocalStabilizer) ?? false;
-  set useLocalSpeedStabilizer(bool v) =>
-      _prefs.setBool(_kUseLocalStabilizer, v);
-
-  bool get logSpeedFetchesToFile => _prefs.getBool(_kLogSpeedFetches) ?? true;
-  set logSpeedFetchesToFile(bool v) => _prefs.setBool(_kLogSpeedFetches, v);
+  /// Speed-limit CSV / HTTP logging is always enabled (no user toggle).
+  bool get logSpeedFetchesToFile => true;
 
   int get uiThemeMode =>
       (_prefs.getInt(_kUiThemeMode) ?? AppThemeMode.auto).clamp(0, 2);
@@ -190,11 +220,15 @@ class PreferencesManager {
   set flutterDrivingTrackingActive(bool v) =>
       _prefs.setBool(_kFlutterDrivingTrackingActive, v);
 
-  int get simulationDestinationPreset =>
-      (_prefs.getInt(_kSimDestPreset) ?? 0).clamp(0, 6);
+  int get simulationDestinationPreset {
+    final raw = _prefs.getInt(_kSimDestPreset) ?? 0;
+    // Removed preset 6 (League City Pkwy → Sandy Bay); migrate old saves to default route.
+    if (raw == 6) return 0;
+    return raw.clamp(0, 5);
+  }
 
   set simulationDestinationPreset(int v) =>
-      _prefs.setInt(_kSimDestPreset, v.clamp(0, 6));
+      _prefs.setInt(_kSimDestPreset, v.clamp(0, 5));
 
   String get simulationCustomDestinationQuery =>
       _prefs.getString(_kSimCustomDestQuery) ?? '';

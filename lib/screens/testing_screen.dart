@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../config/app_config.dart';
+import '../core/constants.dart';
 import '../engine/geo_coordinate.dart';
 import '../logging/speed_limit_api_session_counter.dart';
 import '../providers/app_providers.dart';
@@ -168,7 +169,8 @@ class _TestingScreenState extends ConsumerState<TestingScreen> {
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
             child: SpeedSessionSummaryCard(
-              primaryProviderLabel: preferencesManager.primarySpeedLimitProviderDisplayName,
+              primaryProviderLabel:
+                  preferencesManager.resolvedPrimarySpeedLimitProviderDisplayName,
               isTestingTab: true,
               isSimulating: drive.isSimulating,
               gpsSpeedMph: drive.speedMph,
@@ -176,6 +178,10 @@ class _TestingScreenState extends ConsumerState<TestingScreen> {
               limitMph: drive.limitMph,
               resolvedPrimarySpeedLimitProvider:
                   preferencesManager.resolvedPrimarySpeedLimitProvider,
+              hereMph: preferencesManager.resolvedPrimarySpeedLimitProvider ==
+                      SpeedLimitPrimaryProvider.here
+                  ? drive.limitMph?.round()
+                  : drive.hereCompareMph,
               tomTomMph: drive.tomTomMph,
               mapboxMph: drive.mapboxMph,
               alertThresholdMph: preferencesManager.alertThresholdMph,
