@@ -101,12 +101,12 @@ class _SpeedSessionSummaryCardState extends State<SpeedSessionSummaryCard>
   }
 
   bool _isSpeeding() {
-    final lim = widget.limitMph ?? 0;
-    final suppressLow = widget.suppressAlertsUnder15Mph &&
-        !widget.isTestingTab &&
-        widget.gpsSpeedMph < kLowSpeedAlertSuppressBelowMph;
-    if (suppressLow) return false;
-    if (lim <= 0) return false;
+    final lim = widget.limitMph;
+    if (lim == null || lim <= 0) return false;
+    if (widget.suppressAlertsUnder15Mph &&
+        lim < kSuppressAlertsWhenPostedLimitBelowMph) {
+      return false;
+    }
     final speed = _speedMphForCard();
     return speed > lim + widget.alertThresholdMph - _speedingEpsilon;
   }
@@ -199,7 +199,7 @@ class _SpeedSessionSummaryCardState extends State<SpeedSessionSummaryCard>
     );
   }
 
-  /// Rows for the two providers that are **not** the main (primary) source.
+  /// Rows for the providers that are **not** the main (primary) source.
   List<Widget> _secondaryProviderRows(BuildContext context, Color fg) {
     final primary = widget.resolvedPrimarySpeedLimitProvider;
     final rows = <Widget>[];
@@ -228,7 +228,7 @@ class _SpeedSessionSummaryCardState extends State<SpeedSessionSummaryCard>
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(
-            '$label · secondary',
+            label,
             style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                   color: fg.withValues(alpha: 0.7),
                 ),

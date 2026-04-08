@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/app_providers.dart';
 import '../services/preferences_manager.dart';
 
-/// Settings UI for simulation destination presets and custom origin/destination fields.
+/// Settings UI for simulation destination presets and optional lat/lng O/D fields.
 class SimulationDestinationSettings extends ConsumerStatefulWidget {
   const SimulationDestinationSettings({super.key});
 
@@ -15,16 +15,10 @@ class SimulationDestinationSettings extends ConsumerStatefulWidget {
 
 class _SimulationDestinationSettingsState
     extends ConsumerState<SimulationDestinationSettings> {
-  late TextEditingController _customQuery;
-  late TextEditingController _customLatLng;
   late TextEditingController _routingOrigin;
   late TextEditingController _routingDest;
 
   void _initControllers(PreferencesManager preferencesManager) {
-    _customQuery =
-        TextEditingController(text: preferencesManager.simulationCustomDestinationQuery);
-    _customLatLng =
-        TextEditingController(text: preferencesManager.simulationCustomDestinationLatLng);
     _routingOrigin =
         TextEditingController(text: preferencesManager.simulationRoutingOriginLatLng);
     _routingDest =
@@ -32,8 +26,6 @@ class _SimulationDestinationSettingsState
   }
 
   void _disposeControllers() {
-    _customQuery.dispose();
-    _customLatLng.dispose();
     _routingOrigin.dispose();
     _routingDest.dispose();
   }
@@ -83,7 +75,9 @@ class _SimulationDestinationSettingsState
           },
         ),
         RadioListTile<int>(
-          title: const Text('1 NRG Pkwy, Houston, TX 77054'),
+          title: const Text(
+            'Dove Haven Ln → 17511 El Camino Real, Houston, TX 77058',
+          ),
           value: 1,
           groupValue: preferencesManager.simulationDestinationPreset,
           onChanged: (v) {
@@ -92,9 +86,7 @@ class _SimulationDestinationSettingsState
           },
         ),
         RadioListTile<int>(
-          title: const Text(
-            'Dove Haven Ln → 17511 El Camino Real, Houston, TX 77058',
-          ),
+          title: const Text('17511 El Camino Real → Dove Haven Ln, League City, TX'),
           value: 2,
           groupValue: preferencesManager.simulationDestinationPreset,
           onChanged: (v) {
@@ -103,7 +95,7 @@ class _SimulationDestinationSettingsState
           },
         ),
         RadioListTile<int>(
-          title: const Text('17511 El Camino Real → Dove Haven Ln, League City, TX'),
+          title: const Text('Source & destination coordinates'),
           value: 3,
           groupValue: preferencesManager.simulationDestinationPreset,
           onChanged: (v) {
@@ -111,52 +103,7 @@ class _SimulationDestinationSettingsState
             _setPreset(v);
           },
         ),
-        RadioListTile<int>(
-          title: const Text('Enter custom address'),
-          value: 4,
-          groupValue: preferencesManager.simulationDestinationPreset,
-          onChanged: (v) {
-            if (v == null) return;
-            _setPreset(v);
-          },
-        ),
-        RadioListTile<int>(
-          title: const Text('Source & destination coordinates'),
-          value: 5,
-          groupValue: preferencesManager.simulationDestinationPreset,
-          onChanged: (v) {
-            if (v == null) return;
-            _setPreset(v);
-          },
-        ),
-        if (preferencesManager.simulationDestinationPreset == 4) ...[
-          const SizedBox(height: 8),
-          TextField(
-            controller: _customQuery,
-            decoration: const InputDecoration(
-              labelText: 'Address',
-              border: OutlineInputBorder(),
-            ),
-            onChanged: (s) {
-              preferencesManager.simulationCustomDestinationQuery = s;
-            },
-            onEditingComplete: _bump,
-          ),
-          const SizedBox(height: 8),
-          TextField(
-            controller: _customLatLng,
-            decoration: const InputDecoration(
-              labelText: 'Destination latitude,longitude',
-              hintText: 'Android Discover fills this; or paste decimal degrees',
-              border: OutlineInputBorder(),
-            ),
-            onChanged: (s) {
-              preferencesManager.simulationCustomDestinationLatLng = s;
-            },
-            onEditingComplete: _bump,
-          ),
-        ],
-        if (preferencesManager.simulationDestinationPreset == 5) ...[
+        if (preferencesManager.simulationDestinationPreset == 3) ...[
           const SizedBox(height: 8),
           TextField(
             controller: _routingOrigin,

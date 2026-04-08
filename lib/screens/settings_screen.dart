@@ -24,12 +24,8 @@ class SettingsScreen extends ConsumerWidget {
             routingOriginLatLng: preferencesManager.simulationRoutingOriginLatLng,
             routingDestinationLatLng:
                 preferencesManager.simulationRoutingDestinationLatLng,
-            customDestinationQuery:
-                preferencesManager.simulationCustomDestinationQuery,
-            customDestinationLatLng:
-                preferencesManager.simulationDestinationPreset == 4
-                    ? preferencesManager.simulationCustomDestinationLatLng
-                    : null,
+            customDestinationQuery: '',
+            customDestinationLatLng: null,
           ),
         );
       },
@@ -190,11 +186,6 @@ class SettingsScreen extends ConsumerWidget {
           ),
           RadioListTile<bool>(
             title: const Text('Remote (Supabase Edge)'),
-            subtitle: AppConfig.useRemoteHere
-                ? const Text(
-                    'Requires Google sign-in when remote is enforced',
-                  )
-                : null,
             value: true,
             groupValue: preferencesManager.useRemoteSpeedApi,
             onChanged: (v) {
@@ -221,9 +212,6 @@ class SettingsScreen extends ConsumerWidget {
           ),
           RadioListTile<int>(
             title: const Text('HERE Maps'),
-            subtitle: const Text(
-              'Local REST or Supabase Edge (see “Speed limit data source” above).',
-            ),
             value: SpeedLimitPrimaryProvider.here,
             groupValue: preferencesManager.primarySpeedLimitProvider,
             onChanged: (v) {
@@ -291,15 +279,6 @@ class SettingsScreen extends ConsumerWidget {
           ),
           const Divider(),
           const SimulationDestinationSettings(),
-          const Divider(),
-          ListTile(
-            title: const Text('Configuration'),
-            subtitle: Text(
-              'HERE key & Supabase: pass --dart-define at build time '
-              '(see README in speed-alert-pro-flutter).',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-          ),
         ],
       ),
       ),

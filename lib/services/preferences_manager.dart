@@ -43,6 +43,10 @@ class PreferencesManager {
   static const _kSimRoutingOriginLatlng = 'sim_routing_origin_latlng';
   static const _kSimRoutingDestLatlng = 'sim_routing_dest_latlng';
 
+  /// Default “Source location” for the coordinates preset when unset (lat,lng).
+  static const String kDefaultSimulationRoutingOriginLatLng =
+      '29.526065,-95.015465';
+
   /// Keys allowed when [SharedPreferences.setPrefix] is `''` on Android (no `flutter.` prefix).
   static const Set<String> androidNativePrefsAllowList = {
     'alert_threshold_mph',
@@ -224,11 +228,16 @@ class PreferencesManager {
     final raw = _prefs.getInt(_kSimDestPreset) ?? 0;
     // Removed preset 6 (League City Pkwy → Sandy Bay); migrate old saves to default route.
     if (raw == 6) return 0;
-    return raw.clamp(0, 5);
+    // NRG (1) and custom address (4) removed; coordinates preset was 5 → now 3.
+    if (raw == 1 || raw == 4) return 0;
+    if (raw == 2) return 1;
+    if (raw == 3) return 2;
+    if (raw == 5) return 3;
+    return raw.clamp(0, 3);
   }
 
   set simulationDestinationPreset(int v) =>
-      _prefs.setInt(_kSimDestPreset, v.clamp(0, 5));
+      _prefs.setInt(_kSimDestPreset, v.clamp(0, 3));
 
   String get simulationCustomDestinationQuery =>
       _prefs.getString(_kSimCustomDestQuery) ?? '';
@@ -242,8 +251,11 @@ class PreferencesManager {
   set simulationCustomDestinationLatLng(String v) =>
       _prefs.setString(_kSimCustomDestLatlng, v);
 
-  String get simulationRoutingOriginLatLng =>
-      _prefs.getString(_kSimRoutingOriginLatlng) ?? '';
+  String get simulationRoutingOriginLatLng {
+    final s = _prefs.getString(_kSimRoutingOriginLatlng) ?? '';
+    if (s.trim().isEmpty) return kDefaultSimulationRoutingOriginLatLng;
+    return s;
+  }
 
   set simulationRoutingOriginLatLng(String v) =>
       _prefs.setString(_kSimRoutingOriginLatlng, v);

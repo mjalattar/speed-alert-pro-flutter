@@ -11,10 +11,9 @@ import 'preferences_manager.dart';
 const String kSimulationDefaultOriginLatLng = '29.5445,-95.0205';
 /// Preset 0 origin (first simulation destination option).
 const String kPresetSimKemahSeafoam618LatLng = '29.526066,-95.015461';
-/// 2218 Dove Haven Ln, League City, TX 77573 (approximate; same corridor as legacy Dove preset).
-const String kPresetSimLeagueCityDove2218LatLng = '29.5140547,-95.0674492';
+/// First-preset destination (decimal degrees).
+const String kPresetSimLeagueCityDove2218LatLng = '29.514089,-95.065802';
 const String kPresetSimDoveLatLng = '29.5140547,-95.0674492';
-const String kPresetSimNrgLatLng = '29.6845,-95.4104';
 const String kPresetSimElcaminoLatLng = '29.5500637,-95.1106676';
 const String kPresetSimDoveHavenStartLatLng = kPresetSimDoveLatLng;
 
@@ -35,11 +34,11 @@ String simulationRouteOriginLatLng(PreferencesManager preferencesManager) {
   switch (preset) {
     case 0:
       return kPresetSimKemahSeafoam618LatLng;
-    case 2:
+    case 1:
       return kPresetSimDoveHavenStartLatLng;
-    case 3:
+    case 2:
       return kPresetSimElcaminoLatLng;
-    case 5:
+    case 3:
       return preferencesManager.simulationRoutingOriginLatLng.trim();
     default:
       return kSimulationDefaultOriginLatLng;
@@ -55,17 +54,13 @@ String simulationRouteDestinationLatLngString(
     case 0:
       return kPresetSimLeagueCityDove2218LatLng;
     case 1:
-      return kPresetSimNrgLatLng;
-    case 2:
       return kPresetSimElcaminoLatLng;
-    case 3:
+    case 2:
       return kPresetSimDoveLatLng;
-    case 4:
-      return preferencesManager.simulationCustomDestinationLatLng.trim();
-    case 5:
+    case 3:
       return preferencesManager.simulationRoutingDestinationLatLng.trim();
     default:
-      return preferencesManager.simulationCustomDestinationLatLng.trim();
+      return '';
   }
 }
 
@@ -86,19 +81,6 @@ Future<({List<GeoCoordinate> path, HereSectionSpeedModel? sectionSpeedModel})> r
 
   var destStr = simulationRouteDestinationLatLngString(preferencesManager).trim();
 
-  // Preset 4 + blank custom lat/lng → HERE Discover on [simulationCustomDestinationQuery].
-  if (preferencesManager.simulationDestinationPreset == 4 && destStr.isEmpty) {
-    final q = preferencesManager.simulationCustomDestinationQuery.trim();
-    if (q.isNotEmpty && AppConfig.hereApiKey.isNotEmpty) {
-      final pos = await hereApi.discoverFirstPosition(query: q);
-      if (pos != null) {
-        destStr = '${pos.lat},${pos.lng}';
-        preferencesManager.simulationCustomDestinationLatLng = destStr;
-        ref.read(prefsRevisionProvider.notifier).state++;
-      }
-    }
-  }
-
   if (destStr.isEmpty) {
     return (path: <GeoCoordinate>[], sectionSpeedModel: null);
   }
@@ -107,8 +89,8 @@ Future<({List<GeoCoordinate> path, HereSectionSpeedModel? sectionSpeedModel})> r
   var o = parseLatLngComma(originStr);
   var d = parseLatLngComma(destStr);
 
-  // Preset 5: require valid both ends.
-  if (preferencesManager.simulationDestinationPreset == 5 && (o == null || d == null)) {
+  // Preset 3 (coordinates): require valid both ends.
+  if (preferencesManager.simulationDestinationPreset == 3 && (o == null || d == null)) {
     return (path: <GeoCoordinate>[], sectionSpeedModel: null);
   }
   if (o == null || d == null) {

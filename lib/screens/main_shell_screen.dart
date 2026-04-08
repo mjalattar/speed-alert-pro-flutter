@@ -10,7 +10,8 @@ import 'settings_screen.dart';
 import 'testing_screen.dart';
 
 /// Root shell: tab **0 = Testing**, **1 = Driving**.
-/// Leaving **Driving** for Testing stops tracking; simulation can continue while you view Driving.
+/// Leaving **Driving** for Testing stops tracking. Opening **Driving** while a simulation
+/// runs stops tracking (simulation pipeline). Tracking does not auto-start on Driving.
 class MainShellScreen extends ConsumerStatefulWidget {
   const MainShellScreen({super.key});
 
@@ -27,13 +28,6 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      unawaited(
-        ref
-            .read(drivingSessionProvider.notifier)
-            .restoreAndroidFusedSessionIfNeeded(),
-      );
-    });
   }
 
   @override
@@ -90,8 +84,13 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen>
           if (i == 0 && prev == 1) {
             unawaited(notifier.stopTracking());
           }
-          // Do not stop simulation when opening Driving — simulation runs on the same session;
-          // Home shows "Simulation running" while [isSimulating] stays true.
+          // Opening Driving while simulating: full stop (same as leaving Testing after sim).
+          if (i == 1 && prev == 0) {
+            final sim = ref.read(drivingSessionProvider).isSimulating;
+            if (sim) {
+              unawaited(notifier.stopTracking());
+            }
+          }
         },
         destinations: const [
           NavigationDestination(

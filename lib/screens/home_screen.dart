@@ -11,6 +11,7 @@ import '../core/constants.dart';
 import '../providers/app_providers.dart';
 import '../services/preferences_manager.dart';
 import '../providers/driving_session_notifier.dart';
+import '../logging/speed_limit_api_session_counter.dart';
 import '../widgets/speed_session_summary_card.dart';
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key, this.tabActive = true});
@@ -92,9 +93,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with RouteAware {
     final showPlatformMap =
         hasMapKey && mapHeight > 0 && widget.tabActive && !_coveredByRoute;
 
-    /// Live GPS only — simulation uses the same [isTracking] session but must not look like
-    /// "driving mode" on Home (Stop / Start).
-    final liveDrivingActive = drive.isTracking && !drive.isSimulating;
+    /// Live GPS the user explicitly started from Drive — not simulation-only pipeline.
+    final liveDrivingActive = drive.isTracking &&
+        !drive.isSimulating &&
+        drive.userStartedLiveDriving;
     final simulationRunningOnSession =
         drive.isTracking && drive.isSimulating;
 
@@ -161,20 +163,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with RouteAware {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Card(
-                    child: SwitchListTile(
-                      title: const Text('Suppress alerts under 15 mph'),
-                      subtitle: const Text(
-                        'While GPS speed is under 15 mph: no beeps, no speeding highlight.',
-                      ),
-                      value: preferencesManager.suppressAlertsWhenUnder15Mph,
-                      onChanged: (v) {
-                        preferencesManager.suppressAlertsWhenUnder15Mph = v;
-                        ref.read(prefsRevisionProvider.notifier).state++;
-                      },
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Card(
                     child: Padding(
                       padding: const EdgeInsets.all(16),
                       child: Column(
@@ -185,12 +173,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with RouteAware {
                             style: Theme.of(context).textTheme.titleMedium,
                           ),
                           const SizedBox(height: 4),
-                          Text(
-                            'Speed-limit pipeline updates (this session): '
-                            '${drive.drivingSessionPipelineUpdates}',
-                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                  fontWeight: FontWeight.w600,
-                                ),
+                          ValueListenableBuilder<int>(
+                            valueListenable:
+                                SpeedLimitApiSessionCounter.hereRoutingDrivingSessionCount,
+                            builder: (context, hereReqCount, _) {
+                              return Text(
+                                'HERE speed-limit API requests (this session): $hereReqCount',
+                                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                              );
+                            },
                           ),
                           const SizedBox(height: 12),
                           FilledButton.icon(
@@ -246,17 +239,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with RouteAware {
                     textAlign: TextAlign.center,
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
-                  if (AppConfig.useRemoteHere)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: Text(
-                        preferencesManager.useRemoteSpeedApi
-                            ? 'Speed data: Supabase Edge (signed in)'
-                            : 'Speed data: local HERE API key',
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
+                  const SizedBox(height: 12),
+                  Card(
+                    child: SwitchListTile(
+                      title: const Text('Suppress alerts under 15 mph'),
+                      value: preferencesManager.suppressAlertsWhenUnder15Mph,
+                      onChanged: (v) {
+                        preferencesManager.suppressAlertsWhenUnder15Mph = v;
+                        ref.read(prefsRevisionProvider.notifier).state++;
+                      },
                     ),
+                  ),
                 ],
               ),
             ),

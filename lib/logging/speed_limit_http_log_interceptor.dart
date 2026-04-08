@@ -33,7 +33,7 @@ class SpeedLimitHttpLogInterceptor {
       if (countTowardSession) {
         SpeedLimitApiSessionCounter.recordIfSessionActive();
         if (category == 'HERE_Routing') {
-          SpeedLimitApiSessionCounter.recordHereRoutingTestIfActive();
+          SpeedLimitApiSessionCounter.recordHereRoutingIfActive();
         }
       }
       _append(prefs, category, 'GET', urlRedacted, response.statusCode, '');
@@ -42,7 +42,7 @@ class SpeedLimitHttpLogInterceptor {
       if (countTowardSession) {
         SpeedLimitApiSessionCounter.recordIfSessionActive();
         if (category == 'HERE_Routing') {
-          SpeedLimitApiSessionCounter.recordHereRoutingTestIfActive();
+          SpeedLimitApiSessionCounter.recordHereRoutingIfActive();
         }
       }
       _append(prefs, category, 'GET', urlRedacted, -1, 'io:$e');
@@ -65,7 +65,7 @@ class SpeedLimitHttpLogInterceptor {
       if (countTowardSession) {
         SpeedLimitApiSessionCounter.recordIfSessionActive();
         if (category == 'HERE_Routing') {
-          SpeedLimitApiSessionCounter.recordHereRoutingTestIfActive();
+          SpeedLimitApiSessionCounter.recordHereRoutingIfActive();
         }
       }
       _append(prefs, category, 'POST', urlRedacted, response.statusCode, '');
@@ -74,7 +74,7 @@ class SpeedLimitHttpLogInterceptor {
       if (countTowardSession) {
         SpeedLimitApiSessionCounter.recordIfSessionActive();
         if (category == 'HERE_Routing') {
-          SpeedLimitApiSessionCounter.recordHereRoutingTestIfActive();
+          SpeedLimitApiSessionCounter.recordHereRoutingIfActive();
         }
       }
       _append(prefs, category, 'POST', urlRedacted, -1, 'io:$e');

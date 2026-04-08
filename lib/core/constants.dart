@@ -8,8 +8,9 @@ abstract final class SpeedLimitPrimaryProvider {
   static const int mapbox = 2;
 }
 
-/// Below this GPS speed (mph), optional suppression of alerts can apply.
-const double kLowSpeedAlertSuppressBelowMph = 15.0;
+/// When “suppress alerts under 15 mph” is enabled, overspeed alerts are off while the **posted**
+/// main speed limit is below this value (parking lots, etc.), regardless of vehicle speed.
+const double kSuppressAlertsWhenPostedLimitBelowMph = 15.0;
 
 /// [PreferencesManager] alert run modes.
 abstract final class AlertRunMode {

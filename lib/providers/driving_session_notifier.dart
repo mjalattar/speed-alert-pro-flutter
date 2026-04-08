@@ -7,7 +7,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 
 import '../core/android_system_clock.dart';
-import '../core/constants.dart' show AlertRunMode, kLowSpeedAlertSuppressBelowMph;
+import '../core/constants.dart'
+    show AlertRunMode, kSuppressAlertsWhenPostedLimitBelowMph;
 import '../engine/geo_coordinate.dart';
 import '../engine/here_section_speed_model.dart';
 import '../models/speed_limit_data.dart';
@@ -38,6 +39,7 @@ class DrivingSessionState {
     this.limitMph,
     this.isTracking = false,
     this.isSimulating = false,
+    this.userStartedLiveDriving = false,
     this.permissionDenied = false,
     this.lastError,
     this.hereData,
@@ -56,6 +58,9 @@ class DrivingSessionState {
   final double? limitMph;
   final bool isTracking;
   final bool isSimulating;
+
+  /// True only after the user starts live GPS from the Drive tab; false for simulation-only pipeline.
+  final bool userStartedLiveDriving;
   final bool permissionDenied;
   final String? lastError;
   final SpeedLimitData? hereData;
@@ -79,10 +84,11 @@ class DrivingSessionState {
   final double? lastFixLat;
   final double? lastFixLng;
 
-  bool isSpeeding(int thresholdMph, bool suppressUnder15) {
+  bool isSpeeding(int thresholdMph, bool suppressWhenPostedLimitUnder15) {
     final lim = limitMph;
     if (lim == null || lim <= 0) return false;
-    if (suppressUnder15 && speedMph < kLowSpeedAlertSuppressBelowMph) {
+    if (suppressWhenPostedLimitUnder15 &&
+        lim < kSuppressAlertsWhenPostedLimitBelowMph) {
       return false;
     }
     return speedMph > lim + thresholdMph;
@@ -93,6 +99,7 @@ class DrivingSessionState {
     double? limitMph,
     bool? isTracking,
     bool? isSimulating,
+    bool? userStartedLiveDriving,
     bool? permissionDenied,
     String? lastError,
     SpeedLimitData? hereData,
@@ -111,6 +118,8 @@ class DrivingSessionState {
       limitMph: limitMph ?? this.limitMph,
       isTracking: isTracking ?? this.isTracking,
       isSimulating: isSimulating ?? this.isSimulating,
+      userStartedLiveDriving:
+          userStartedLiveDriving ?? this.userStartedLiveDriving,
       permissionDenied: permissionDenied ?? this.permissionDenied,
       lastError: lastError ?? this.lastError,
       hereData: hereData ?? this.hereData,
@@ -233,9 +242,10 @@ class DrivingSessionNotifier extends StateNotifier<DrivingSessionState> {
     final mode = pm.alertRunMode;
     final lim = limitMph;
     final hasLimit = lim != null && lim > 0;
-    final suppressLowSpeedAlerts =
-        pm.suppressAlertsWhenUnder15Mph && speedMph < kLowSpeedAlertSuppressBelowMph;
-    final isSpeeding = !suppressLowSpeedAlerts &&
+    final suppressLowPostedLimitAlerts = pm.suppressAlertsWhenUnder15Mph &&
+        hasLimit &&
+        lim < kSuppressAlertsWhenPostedLimitBelowMph;
+    final isSpeeding = !suppressLowPostedLimitAlerts &&
         lim != null &&
         lim > 0 &&
         speedMph > lim + threshold;
@@ -345,6 +355,7 @@ class DrivingSessionNotifier extends StateNotifier<DrivingSessionState> {
 
     state = state.copyWith(
       isTracking: true,
+      userStartedLiveDriving: countDrivingApiSession,
       permissionDenied: false,
       lastError: null,
       drivingSessionPipelineUpdates: 0,
@@ -412,9 +423,19 @@ class DrivingSessionNotifier extends StateNotifier<DrivingSessionState> {
     if (routePoints.length < 2) {
       state = state.copyWith(
         lastError:
-            'No simulation route: enable HERE in Settings, valid HERE key, and origin/destination (preset 4 can geocode from custom search). Or use Remote speed API + sign-in.',
+            'No simulation route: enable HERE in Settings, valid HERE key, and origin/destination (coordinates preset needs both lat,lng). Or use Remote speed API + sign-in.',
       );
       return;
+    }
+
+    // If GPS is already running, mark simulation in state before any more async work so the
+    // Drive tab never briefly shows “Stop tracking” (isTracking && !isSimulating).
+    if (state.isTracking && _processor != null) {
+      state = state.copyWith(
+        isSimulating: true,
+        simulatedSpeedMph: 30,
+        simulationRoutePolyline: routePoints,
+      );
     }
 
     if (!state.isTracking || _processor == null) {
@@ -526,7 +547,6 @@ class DrivingSessionNotifier extends StateNotifier<DrivingSessionState> {
   Future<void> stopTracking() async {
     await stopRouteSimulation();
     SpeedLimitApiSessionCounter.onDrivingSessionStopped();
-    SpeedDebugLogRouter.stopDrivingSession();
     _geoFixQueue.clear();
     await _sub?.cancel();
     _sub = null;

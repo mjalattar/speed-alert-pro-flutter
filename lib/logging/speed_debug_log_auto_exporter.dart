@@ -5,21 +5,33 @@ import 'speed_debug_log_router.dart';
 import 'speed_debug_log_session.dart';
 import 'speed_fetch_debug_logger.dart';
 
-/// Copies finished simulation logs to Downloads when auto-export is enabled.
+/// Copies finished simulation / driving logs to Downloads when auto-export is enabled.
 class SpeedDebugLogAutoExporter {
   SpeedDebugLogAutoExporter._();
 
   static Future<void> exportSimulationSessionEndIfEnabled() async {
-    final prefs = speedAlertLoggingPreferences;
-    if (prefs == null) return;
     try {
-      if (Platform.isAndroid) {
+      final prefs = speedAlertLoggingPreferences;
+      if (prefs != null && Platform.isAndroid) {
         await SpeedFetchDebugLogger.copySessionLogToPublicDownloads(
           SpeedDebugLogSession.simulation,
         );
       }
     } finally {
       SpeedDebugLogRouter.stopSimulationSession();
+    }
+  }
+
+  static Future<void> exportDrivingSessionEndIfEnabled() async {
+    try {
+      final prefs = speedAlertLoggingPreferences;
+      if (prefs != null && Platform.isAndroid) {
+        await SpeedFetchDebugLogger.copySessionLogToPublicDownloads(
+          SpeedDebugLogSession.driving,
+        );
+      }
+    } finally {
+      SpeedDebugLogRouter.stopDrivingSession();
     }
   }
 }

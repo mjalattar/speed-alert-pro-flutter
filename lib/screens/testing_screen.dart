@@ -255,12 +255,6 @@ class _TestingScreenState extends ConsumerState<TestingScreen> {
                             );
                           },
                         ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Uses synthetic GPS along a short path through the same HERE pipeline '
-                          'as driving. No need to start tracking first.',
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
                         if (drive.isSimulating) ...[
                           const SizedBox(height: 12),
                           Row(

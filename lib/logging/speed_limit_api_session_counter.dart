@@ -18,6 +18,9 @@ class SpeedLimitApiSessionCounter {
   /// (Testing tab label — excludes TomTom/Mapbox and non-HERE calls.)
   static final ValueNotifier<int> hereRoutingTestSessionCount = ValueNotifier<int>(0);
 
+  /// Same HERE routing count semantics as [hereRoutingTestSessionCount], for an active **driving** session.
+  static final ValueNotifier<int> hereRoutingDrivingSessionCount = ValueNotifier<int>(0);
+
   static void onTestStarted() {
     _testSessionActive = true;
     count.value = 0;
@@ -32,10 +35,13 @@ class SpeedLimitApiSessionCounter {
   static void onDrivingSessionStarted() {
     _drivingSessionActive = true;
     drivingSessionRequestCount.value = 0;
+    hereRoutingDrivingSessionCount.value = 0;
   }
 
   static void onDrivingSessionStopped() {
+    if (!_drivingSessionActive) return;
     _drivingSessionActive = false;
+    unawaited(SpeedDebugLogAutoExporter.exportDrivingSessionEndIfEnabled());
   }
 
   static void recordIfSessionActive() {
@@ -47,9 +53,13 @@ class SpeedLimitApiSessionCounter {
     }
   }
 
-  static void recordHereRoutingTestIfActive() {
+  /// Increments HERE routing request counters for simulation and/or driving when active.
+  static void recordHereRoutingIfActive() {
     if (_testSessionActive) {
       hereRoutingTestSessionCount.value = hereRoutingTestSessionCount.value + 1;
+    }
+    if (_drivingSessionActive) {
+      hereRoutingDrivingSessionCount.value = hereRoutingDrivingSessionCount.value + 1;
     }
   }
 }
