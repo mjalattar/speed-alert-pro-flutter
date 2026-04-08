@@ -24,7 +24,7 @@ class SpeedLimitApiRequestLogger {
       'lat,lng,bearing_deg,speed_mps,horizontal_accuracy_m,altitude_m,vertical_accuracy_m,'
       'location_provider,location_fix_age_ms,'
       'vehicle_speed_mph,'
-      'display_mph,here_mph,remote_mph,tomtom_mph,mapbox_mph,stabilized,source_tag,segment_key,'
+      'here_mph,remote_mph,tomtom_mph,mapbox_mph,stabilized,source_tag,segment_key,'
       'here_api_request_utc,here_api_response_utc,here_response_source,here_response_confidence,'
       'here_functional_class,here_segment_cache_zones,here_segment_route_len_m,here_api_error,'
       'meters_since_prior_fetch_trigger,ms_since_prior_fetch_trigger,gps_trace_point_count,'

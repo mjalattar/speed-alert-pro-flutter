@@ -2120,13 +2120,7 @@ class LocationProcessor {
         ),
       );
     }
-    _logDisplayLimitChangeIfChanged(
-      location: location,
-      vehicleSpeedMph: vehicleSpeedMph,
-      stabilizerMph: displayMph,
-      finalDisplay: finalDisplay,
-      segmentKey: segmentKey,
-    );
+    // Do not record display limit change events per user request.
     onSpeedUpdate(vehicleSpeedMph, _currentSpeedLimitMph);
     _lastHereSegmentKey = segmentKey;
   }

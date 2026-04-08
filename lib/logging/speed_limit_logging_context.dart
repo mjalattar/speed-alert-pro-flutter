@@ -52,8 +52,7 @@ class SpeedLimitLoggingContext {
 
   static String formatMphCsvCell(int? mph, bool networkFetch) {
     if (mph == null) return '';
-    final s = mph.toString();
-    return networkFetch ? '**$s**' : s;
+    return mph.toString();
   }
 
   /// Updates only the TomTom mph columns (independent of Mapbox).
