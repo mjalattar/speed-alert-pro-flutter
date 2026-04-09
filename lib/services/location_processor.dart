@@ -442,33 +442,9 @@ class LocationProcessor {
     }
 
     if (_primaryRemote) {
-      final sw = remotePrimaryTrySectionWalk(
-        location: location,
-        hereMatchOpts: hereMatchOpts,
-        headingForPolyline: headingForPolyline,
-        routeModel: _remoteSectionSpeedModel,
-        continuity: _sectionWalkAlongContinuity,
-      );
-      if (sw is RoutePrimarySectionWalkStop) {
-        final a = sw.apply;
-        _applyPrimaryResolvedLimit(
-          location: location,
-          vehicleSpeedMph: displayMph,
-          rawMph: a.rawMph,
-          segmentKey: a.segmentKey,
-          functionalClass: a.functionalClass,
-          logCompareRow: false,
-          fetchTelemetry: null,
-          logFields: null,
-          hereLimitFromNetworkFetch: false,
-          hereResolvePath: a.resolvePath,
-        );
-        return;
-      }
-      if (sw is RoutePrimarySectionWalkInvalidate) {
-        _sectionWalkAlongContinuity.reset();
-        _remoteSectionSpeedModel = null;
-      }
+      // Removed: section walk logic. Remote primary fetches fresh from edge function
+      // on each location tick (same behavior as Remote secondary compare fetch).
+      // _remoteSectionSpeedModel is kept only for simulation priming.
     }
 
     if (_primaryTomTom) {
@@ -585,26 +561,8 @@ class LocationProcessor {
     }
 
     if (_primaryRemote) {
-      final snap = remotePrimaryTrySticky(
-        location: location,
-        headingForPolyline: headingForPolyline,
-        sticky: _remoteStickyRoadSegment,
-      );
-      if (snap != null) {
-        _applyPrimaryResolvedLimit(
-          location: location,
-          vehicleSpeedMph: displayMph,
-          rawMph: snap.rawMph,
-          segmentKey: snap.segmentKey,
-          functionalClass: snap.functionalClass,
-          logCompareRow: false,
-          fetchTelemetry: null,
-          logFields: null,
-          hereLimitFromNetworkFetch: false,
-          hereResolvePath: snap.resolvePath,
-        );
-        return;
-      }
+      // Skip sticky early-return; Remote primary fetches same as Remote secondary
+      // (sticky segment is kept only for stationary_hold fallback below).
     }
 
     final hasPrimaryGeometry = (_primaryHere &&
@@ -800,6 +758,7 @@ class LocationProcessor {
 
   bool _sustainedDrivingEligible(Position location, double rawMph) {
     if (rawMph < DRIVING_MIN_MPH_FOR_FETCH) return false;
+    if (_roadTestSimulationActive && _primaryRemote) return true;
     if (_drivingSustainedStartUtcMs == 0) return false;
     final requiredMs = _pendingRelaxedFirstFetch
         ? RELAXED_FIRST_FETCH_SUSTAINED_MS
@@ -809,6 +768,9 @@ class LocationProcessor {
   }
 
   bool _sufficientDisplacementSinceLastFetch(Position location) {
+    // Bypass for Remote primary during simulation to allow cache population
+    if (_roadTestSimulationActive && _primaryRemote) return true;
+    
     final last = _lastApiFetchLocation;
     if (last == null) return true;
     if (AndroidLocationCompat.distanceBetweenMeters(
@@ -833,7 +795,10 @@ class LocationProcessor {
   bool _shouldTriggerHereSpeedLimitFetch(Position location, double rawMph) {
     if (rawMph < DRIVING_MIN_MPH_FOR_FETCH) return false;
     if (!_sustainedDrivingEligible(location, rawMph)) return false;
-    if (!_sufficientDisplacementSinceLastFetch(location)) return false;
+    if (!_sufficientDisplacementSinceLastFetch(location)) {
+      if (_roadTestSimulationActive && _primaryRemote) return true;
+      return false;
+    }
     return true;
   }
 

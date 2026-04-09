@@ -22,19 +22,35 @@ type Body = {
 const HERE_ALERT_ROUTE_LEAD_METERS = 1000;
 
 /** Bump when alert mph extraction / cache shape changes so stale rows are not reused. */
-const HERE_ALERT_CACHE_RULE = "2026-04-dart-parity";
+const HERE_ALERT_CACHE_RULE = "2026-04-floor-h30";
 
-function round4(n: number): number {
-  return Math.round(n * 1e4) / 1e4;
+/** Origin coordinates floored to this many decimal places for cache keys. */
+const ORIGIN_DECIMALS = 3; // ~111 m cell
+
+/** Heading bucket width (degrees). 360 / 30 = 12 compass points. */
+const HEADING_BUCKET_DEGREES = 30;
+
+function cacheFloor(n: number, decimals: number): number {
+  const f = 10 ** decimals;
+  return Math.floor(n * f) / f;
 }
 
 function cacheKeyAlert(
   lat: number,
   lng: number,
+  headingDeg: number | null,
+  hasExplicitDest: boolean,
   destLat: number,
   destLng: number,
 ): string {
-  return `${round4(lat)},${round4(lng)}|${round4(destLat)},${round4(destLng)}|${HERE_ALERT_CACHE_RULE}`;
+  const origin = `${cacheFloor(lat, ORIGIN_DECIMALS)},${cacheFloor(lng, ORIGIN_DECIMALS)}`;
+  if (hasExplicitDest) {
+    return `${origin}|${cacheFloor(destLat, ORIGIN_DECIMALS)},${cacheFloor(destLng, ORIGIN_DECIMALS)}|${HERE_ALERT_CACHE_RULE}`;
+  }
+  const h = headingDeg != null && Number.isFinite(headingDeg)
+    ? Math.floor((((headingDeg % 360) + 360) % 360) / HEADING_BUCKET_DEGREES) * HEADING_BUCKET_DEGREES
+    : 0;
+  return `${origin}|h${h}|${HERE_ALERT_CACHE_RULE}`;
 }
 
 async function fetchHereRoutesJson(
@@ -137,13 +153,12 @@ async function resolveHereAlertPayload(
   headingDeg: number | null,
 ): Promise<{ speed_limit_mph: number | null; cached: boolean; source: string }> {
   const origin = `${lat},${lng}`;
+  const hasExplicitDest = dLat != null && dLng != null && Number.isFinite(dLat) && Number.isFinite(dLng);
   let destLat: number;
   let destLng: number;
-  if (
-    dLat != null && dLng != null && Number.isFinite(dLat) && Number.isFinite(dLng)
-  ) {
-    destLat = dLat;
-    destLng = dLng;
+  if (hasExplicitDest) {
+    destLat = dLat!;
+    destLng = dLng!;
   } else if (headingDeg != null && Number.isFinite(headingDeg)) {
     [destLat, destLng] = offsetLatLngMeters(
       lat,
@@ -157,7 +172,7 @@ async function resolveHereAlertPayload(
   }
   const destination = `${destLat},${destLng}`;
 
-  const key = cacheKeyAlert(lat, lng, destLat, destLng);
+  const key = cacheKeyAlert(lat, lng, headingDeg, hasExplicitDest, destLat, destLng);
   const ttlHours = Number(Deno.env.get("CACHE_TTL_HOURS") ?? "24") || 24;
   const now = Date.now();
 

@@ -41,8 +41,8 @@ Run Supabase CLI commands from **this directory** (`speed-alert-pro-flutter/supa
      supabase secrets set REVENUECAT_SECRET_API_KEY=your_rc_secret_key
      supabase secrets set RC_ENTITLEMENT_ID=premium
      supabase secrets set CACHE_TTL_HOURS=24
-     (Alert cache key is ~11 m–precise origin|destination; longer TTL cuts duplicate HERE transactions
-     for many subscribers on the same road. Keep compare flows in mind if you shorten TTL.)
+(Alert cache key uses ~111 m–grid origin + 15° heading bucket; longer TTL cuts duplicate HERE transactions
+      for many subscribers on the same road. Keep compare flows in mind if you shorten TTL.)
    Deploy:
      supabase functions deploy speed-limit-remote --no-verify-jwt
    (JWT is verified inside the function via the user’s Bearer token.)

@@ -21,8 +21,11 @@ class AppRootGate extends ConsumerWidget {
       return child;
     }
 
-    ref.listen<AsyncValue<Session?>>(authSessionProvider, (prev, next) {
+    // Listen for session changes to update RevenueCat
+    ref.listen<AsyncValue<Session?>>(authSessionProvider, (prev, next) async {
+      print('AppRootGate listen: prev=$prev, next=$next');
       next.whenData((session) async {
+        print('AppRootGate listen data: session=$session');
         if (session != null && AppConfig.revenueCatPublicApiKey.isNotEmpty) {
           try {
             await Purchases.logIn(session.user.id);
@@ -32,14 +35,16 @@ class AppRootGate extends ConsumerWidget {
     });
 
     final auth = ref.watch(authSessionProvider);
+    print('AppRootGate build: auth=$auth');
     return auth.when(
       loading: () => const Scaffold(
         body: Center(child: CircularProgressIndicator()),
       ),
       error: (e, st) => Scaffold(
-        body: Center(child: Text('Auth: $e')),
+        body: Center(child: Text('Auth error: $e')),
       ),
       data: (session) {
+        print('AppRootGate data: session=${session?.user.id ?? "null"}');
         if (session == null) {
           return const GoogleSignInScreen();
         }

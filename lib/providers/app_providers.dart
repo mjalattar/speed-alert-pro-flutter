@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:rxdart/rxdart.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../config/app_config.dart';
@@ -100,12 +103,39 @@ final speedLimitAggregatorProvider = Provider<SpeedLimitAggregator>((ref) {
   );
 });
 
-final authSessionProvider = StreamProvider<Session?>((ref) async* {
+final authSessionProvider = StreamProvider<Session?>((ref) {
   final client = Supabase.instance.client;
-  yield client.auth.currentSession;
-  await for (final e in client.auth.onAuthStateChange) {
-    yield e.session;
+
+  final subject = BehaviorSubject<Session?>();
+
+  void emitSession(Session? session) {
+    if (!subject.isClosed) {
+      subject.add(session);
+    }
   }
+
+  final currentSession = client.auth.currentSession;
+  if (currentSession != null) {
+    subject.add(currentSession);
+  }
+
+  client.auth.onAuthStateChange.listen((data) {
+    final event = data.event;
+    final session = data.session;
+    print('Auth Event Received: $event, session=${session?.user.id ?? "null"}');
+    
+    if (event == AuthChangeEvent.initialSession || 
+        event == AuthChangeEvent.signedIn || 
+        event == AuthChangeEvent.tokenRefreshed) {
+      emitSession(session);
+    } else if (event == AuthChangeEvent.signedOut) {
+      emitSession(null);
+    }
+  });
+
+  ref.onDispose(() => subject.close());
+
+  return subject.stream;
 });
 
 final entitlementAccessProvider = FutureProvider.autoDispose<bool>((ref) async {

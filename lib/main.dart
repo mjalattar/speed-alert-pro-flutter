@@ -1,5 +1,3 @@
-import 'dart:developer' as developer;
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:purchases_flutter/purchases_flutter.dart';
@@ -42,15 +40,14 @@ Future<void> main() async {
       await Supabase.initialize(
         url: AppConfig.supabaseUrl,
         anonKey: AppConfig.supabaseAnonKey,
+        authOptions: const FlutterAuthClientOptions(
+          autoRefreshToken: true,
+        ),
       );
+      print('Supabase initialized');
       await runSupabaseAuthBootstrap();
     } catch (e, st) {
-      developer.log(
-        'Supabase init failed (offline or bad URL)',
-        name: 'SpeedAlertApp',
-        error: e,
-        stackTrace: st,
-      );
+      debugPrint('Supabase init failed (offline or bad URL): $e');
     }
   }
 
