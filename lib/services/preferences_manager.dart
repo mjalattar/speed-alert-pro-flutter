@@ -27,9 +27,6 @@ class PreferencesManager {
   static const _kApiRemote = 'api_remote_enabled';
   /// [SpeedLimitPrimaryProvider] value (here, tomTom, mapbox, remote).
   static const _kPrimarySpeedLimitProvider = 'primary_speed_limit_provider';
-  /// One-shot: turn on the API switch for the stored main provider if it was still off (legacy mismatch).
-  static const _kPrimaryApiFlagsAlignedV1 = 'prefs_primary_api_flags_aligned_v1';
-  static const _kUseRemoteSpeedApi = 'use_remote_speed_api';
   static const _kUiThemeMode = 'ui_theme_mode';
   static const _kSuppressUnder15 = 'suppress_alerts_under_15_mph';
   static const _kOverlayHudMinimized = 'overlay_hud_minimized';
@@ -58,14 +55,12 @@ class PreferencesManager {
     'api_mapbox_enabled',
     'api_remote_enabled',
     'primary_speed_limit_provider',
-    'prefs_primary_api_flags_aligned_v1',
     'sim_dest_preset',
     'sim_custom_dest_query',
     'sim_custom_dest_latlng',
     'sim_routing_origin_latlng',
     'sim_routing_dest_latlng',
     'overlay_hud_minimized',
-    'use_remote_speed_api',
     'ui_theme_mode',
     'suppress_alerts_under_15_mph',
     'flutter_driving_tracking_active',
@@ -88,48 +83,7 @@ class PreferencesManager {
 
   static Future<PreferencesManager> open() async {
     final p = await SharedPreferences.getInstance();
-    final m = PreferencesManager(p);
-    await m._alignPrimaryProviderApiFlagsOnce();
-    await m._migrateRemotePrimaryFromLegacyRemotePrefs();
-    return m;
-  }
-
-  /// Legacy [useRemoteSpeedApi] + primary HERE → primary [remote].
-  Future<void> _migrateRemotePrimaryFromLegacyRemotePrefs() async {
-    const k = 'prefs_migrate_remote_primary_v1';
-    if (_prefs.getBool(k) == true) return;
-    final hadRemoteKey = _prefs.containsKey(_kUseRemoteSpeedApi);
-    final legacyRemote = hadRemoteKey && (_prefs.getBool(_kUseRemoteSpeedApi) ?? false);
-    final primary = _prefs.getInt(_kPrimarySpeedLimitProvider);
-    if (legacyRemote &&
-        AppConfig.useRemoteHere &&
-        (primary == null || primary == SpeedLimitPrimaryProvider.here)) {
-      await _prefs.setInt(_kPrimarySpeedLimitProvider, SpeedLimitPrimaryProvider.remote);
-      if (!_prefs.containsKey(_kApiRemote)) {
-        await _prefs.setBool(_kApiRemote, true);
-      }
-    }
-    await _prefs.setBool(k, true);
-  }
-
-  /// If user had chosen TomTom/Mapbox as main but left that API disabled, [resolvedPrimarySpeedLimitProvider]
-  /// fell back to HERE. Enable the matching API once so the choice takes effect.
-  Future<void> _alignPrimaryProviderApiFlagsOnce() async {
-    if (_prefs.getBool(_kPrimaryApiFlagsAlignedV1) == true) return;
-    final want = primarySpeedLimitProvider;
-    if (want == SpeedLimitPrimaryProvider.here && !isHereApiEnabled) {
-      isHereApiEnabled = true;
-    }
-    if (want == SpeedLimitPrimaryProvider.tomTom && !isTomTomApiEnabled) {
-      isTomTomApiEnabled = true;
-    }
-    if (want == SpeedLimitPrimaryProvider.mapbox && !isMapboxApiEnabled) {
-      isMapboxApiEnabled = true;
-    }
-    if (want == SpeedLimitPrimaryProvider.remote && AppConfig.useRemoteHere && !isRemoteApiEnabled) {
-      isRemoteApiEnabled = true;
-    }
-    await _prefs.setBool(_kPrimaryApiFlagsAlignedV1, true);
+    return PreferencesManager(p);
   }
 
   int get alertThresholdMph => _prefs.getInt(_kAlertThreshold) ?? 5;
@@ -254,17 +208,8 @@ class PreferencesManager {
   set flutterDrivingTrackingActive(bool v) =>
       _prefs.setBool(_kFlutterDrivingTrackingActive, v);
 
-  int get simulationDestinationPreset {
-    final raw = _prefs.getInt(_kSimDestPreset) ?? 0;
-    // Removed preset 6 (League City Pkwy → Sandy Bay); migrate old saves to default route.
-    if (raw == 6) return 0;
-    // NRG (1) and custom address (4) removed; coordinates preset was 5 → now 3.
-    if (raw == 1 || raw == 4) return 0;
-    if (raw == 2) return 1;
-    if (raw == 3) return 2;
-    if (raw == 5) return 3;
-    return raw.clamp(0, 3);
-  }
+  int get simulationDestinationPreset =>
+      _prefs.getInt(_kSimDestPreset) ?? 0;
 
   set simulationDestinationPreset(int v) =>
       _prefs.setInt(_kSimDestPreset, v.clamp(0, 3));

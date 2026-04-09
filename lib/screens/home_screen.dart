@@ -127,6 +127,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with RouteAware {
                       SpeedLimitPrimaryProvider.remote
                   ? drive.limitMph?.round()
                   : drive.remoteCompareMph,
+              remoteFromCache: drive.remoteLimitFromCache,
               alertThresholdMph: threshold,
               suppressAlertsUnder15Mph: preferencesManager.suppressAlertsWhenUnder15Mph,
             ),

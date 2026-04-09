@@ -19,6 +19,7 @@ class SpeedSessionSummaryCard extends StatefulWidget {
     required this.mapboxMph,
     this.remoteCompareEnabled = false,
     this.remoteMph,
+    this.remoteFromCache = false,
     required this.alertThresholdMph,
     required this.suppressAlertsUnder15Mph,
   });
@@ -46,6 +47,9 @@ class SpeedSessionSummaryCard extends StatefulWidget {
 
   /// Remote (Edge) mph (main limit when Remote is primary; secondary compare otherwise).
   final int? remoteMph;
+
+  /// True when the Remote speed limit was from cache.
+  final bool remoteFromCache;
 
   final int alertThresholdMph;
   final bool suppressAlertsUnder15Mph;
@@ -120,6 +124,11 @@ class _SpeedSessionSummaryCardState extends State<SpeedSessionSummaryCard>
     return speed > lim + widget.alertThresholdMph - _speedingEpsilon;
   }
 
+  /// True when the main (primary) limit display should show cached indicator.
+  bool get _mainLimitFromCache =>
+      widget.remoteFromCache &&
+      widget.resolvedPrimarySpeedLimitProvider == SpeedLimitPrimaryProvider.remote;
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -189,7 +198,7 @@ class _SpeedSessionSummaryCardState extends State<SpeedSessionSummaryCard>
                             limitText,
                             style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                                   fontWeight: FontWeight.bold,
-                                  color: fg,
+                                  color: _mainLimitFromCache ? Colors.yellow : fg,
                                 ),
                             textAlign: TextAlign.end,
                           ),
@@ -213,17 +222,17 @@ class _SpeedSessionSummaryCardState extends State<SpeedSessionSummaryCard>
     final primary = widget.resolvedPrimarySpeedLimitProvider;
     final rows = <Widget>[];
     if (primary != SpeedLimitPrimaryProvider.here) {
-      rows.add(_secondaryProviderRow(context, 'HERE Maps', widget.hereMph, fg));
+      rows.add(_secondaryProviderRow(context, 'HERE Maps', widget.hereMph, fg, false));
     }
     if (primary != SpeedLimitPrimaryProvider.tomTom) {
-      rows.add(_secondaryProviderRow(context, 'TomTom', widget.tomTomMph, fg));
+      rows.add(_secondaryProviderRow(context, 'TomTom', widget.tomTomMph, fg, false));
     }
     if (primary != SpeedLimitPrimaryProvider.mapbox) {
-      rows.add(_secondaryProviderRow(context, 'Mapbox', widget.mapboxMph, fg));
+      rows.add(_secondaryProviderRow(context, 'Mapbox', widget.mapboxMph, fg, false));
     }
     if (widget.remoteCompareEnabled &&
         primary != SpeedLimitPrimaryProvider.remote) {
-      rows.add(_secondaryProviderRow(context, 'Remote', widget.remoteMph, fg));
+      rows.add(_secondaryProviderRow(context, 'Remote', widget.remoteMph, fg, widget.remoteFromCache));
     }
     return rows;
   }
@@ -233,8 +242,10 @@ class _SpeedSessionSummaryCardState extends State<SpeedSessionSummaryCard>
     String label,
     int? mph,
     Color fg,
+    bool fromCache,
   ) {
     final hasMph = mph != null;
+    final displayColor = fromCache ? Colors.yellow : (hasMph ? fg.withValues(alpha: 0.8) : fg.withValues(alpha: 0.5));
     return Padding(
       padding: const EdgeInsets.only(top: 6),
       child: Row(
@@ -249,7 +260,8 @@ class _SpeedSessionSummaryCardState extends State<SpeedSessionSummaryCard>
           Text(
             hasMph ? '$mph mph' : 'N/A',
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  color: hasMph ? fg.withValues(alpha: 0.8) : fg.withValues(alpha: 0.5),
+                  color: displayColor,
+                  fontWeight: fromCache ? FontWeight.bold : FontWeight.normal,
                 ),
           ),
         ],

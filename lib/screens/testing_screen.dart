@@ -189,6 +189,7 @@ class _TestingScreenState extends ConsumerState<TestingScreen> {
                       SpeedLimitPrimaryProvider.remote
                   ? drive.limitMph?.round()
                   : drive.remoteCompareMph,
+              remoteFromCache: drive.remoteLimitFromCache,
               alertThresholdMph: preferencesManager.alertThresholdMph,
               suppressAlertsUnder15Mph:
                   preferencesManager.suppressAlertsWhenUnder15Mph,

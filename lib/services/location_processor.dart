@@ -140,17 +140,27 @@ class LocationProcessor {
 
   /// Secondary Remote compare mph ([SpeedLimitAggregator.fetchRemoteMapsOnly]) when primary is not Remote.
   int? _remoteCompareMph;
+  bool _remoteCompareFromCache = false;
   int _remoteCompareSustainedStartUtcMs = 0;
   bool _pendingRelaxedFirstRemoteCompareFetch = true;
   bool _remoteCompareFetchInFlight = false;
   Position? _pendingRemoteCompareFetchLocation;
   Position? _lastRemoteCompareFetchLocation;
 
+  /// Whether the Remote primary speed limit was from cache (for UI indication).
+  bool _remotePrimaryFromCache = false;
+
   /// HERE mph for secondary row when primary is not HERE (including Remote-primary: compare HERE vs Remote).
   int? get hereSecondaryCompareMph => _primaryHere ? null : _hereCompareMph;
 
   /// Remote mph for secondary row when primary is not Remote.
   int? get remoteSecondaryCompareMph => _primaryRemote ? null : _remoteCompareMph;
+
+  /// Whether the Remote compare (secondary) mph was from cache.
+  bool get remoteCompareFromCache => _remoteCompareFromCache;
+
+  /// Whether the Remote primary mph was from cache.
+  bool get remotePrimaryFromCache => _remotePrimaryFromCache;
 
   (int?, int?) _vendorPeekMphForLogs() {
     if (!preferencesManager.isTomTomApiEnabled &&
@@ -1148,6 +1158,7 @@ class LocationProcessor {
       if (generation != _speedFetchGeneration) return;
       if (_primaryRemote) return;
       _remoteCompareMph = data.speedLimitMph;
+      _remoteCompareFromCache = data.source.contains('(cached)');
       SpeedLimitLoggingContext.setRemoteMphCell(data.speedLimitMph, true);
       onSecondaryVendorDataUpdated?.call();
     } catch (_) {
@@ -1669,6 +1680,7 @@ class LocationProcessor {
         _remoteStickyRoadSegment = hereResult.stickySegment;
         _sectionWalkAlongContinuity.reset();
         _remoteSectionSpeedModel = hereResult.sectionSpeedModel;
+        _remotePrimaryFromCache = resolvedHere.source.contains('(cached)');
         _applyPrimaryResolvedLimit(
           location: location,
           vehicleSpeedMph: vehicleSpeedMph,
@@ -1678,8 +1690,8 @@ class LocationProcessor {
           logCompareRow: logCompare,
           fetchTelemetry: telemetryObj,
           logFields: logFields,
-          hereLimitFromNetworkFetch: true,
-          hereResolvePath: 'network',
+          hereLimitFromNetworkFetch: !_remotePrimaryFromCache,
+          hereResolvePath: _remotePrimaryFromCache ? 'remote_cache' : 'network',
         );
       } else {
         _remoteStickyRoadSegment = null;

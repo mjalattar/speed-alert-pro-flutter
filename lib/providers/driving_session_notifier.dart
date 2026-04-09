@@ -49,6 +49,7 @@ class DrivingSessionState {
     this.mapboxMph,
     this.hereCompareMph,
     this.remoteCompareMph,
+    this.remoteLimitFromCache = false,
     this.simulatedSpeedMph = 30,
     this.drivingSessionPipelineUpdates = 0,
     this.simulationRoutePolyline = const [],
@@ -75,6 +76,9 @@ class DrivingSessionState {
 
   /// Remote (Edge) mph for secondary row when primary is not Remote ([LocationProcessor.remoteSecondaryCompareMph]).
   final int? remoteCompareMph;
+
+  /// True when the Remote speed limit was obtained from cache (Supabase edge function cache hit).
+  final bool remoteLimitFromCache;
 
   /// Synthetic route simulation speed ([MockLocationTester] +/- adjustment).
   final int simulatedSpeedMph;
@@ -113,6 +117,7 @@ class DrivingSessionState {
     int? mapboxMph,
     int? hereCompareMph,
     int? remoteCompareMph,
+    bool? remoteLimitFromCache,
     int? simulatedSpeedMph,
     int? drivingSessionPipelineUpdates,
     List<GeoCoordinate>? simulationRoutePolyline,
@@ -134,6 +139,7 @@ class DrivingSessionState {
       mapboxMph: mapboxMph ?? this.mapboxMph,
       hereCompareMph: hereCompareMph ?? this.hereCompareMph,
       remoteCompareMph: remoteCompareMph ?? this.remoteCompareMph,
+      remoteLimitFromCache: remoteLimitFromCache ?? this.remoteLimitFromCache,
       simulatedSpeedMph: simulatedSpeedMph ?? this.simulatedSpeedMph,
       drivingSessionPipelineUpdates:
           drivingSessionPipelineUpdates ?? this.drivingSessionPipelineUpdates,
@@ -219,6 +225,7 @@ class DrivingSessionNotifier extends StateNotifier<DrivingSessionState> {
     final proc = _processor;
     final hereSecondary = proc?.hereSecondaryCompareMph;
     final remoteSecondary = proc?.remoteSecondaryCompareMph;
+    final remoteFromCache = proc?.remoteCompareFromCache ?? false;
 
     final pm = ref.read(preferencesProvider).preferencesManager;
     final remoteMph =
@@ -229,6 +236,7 @@ class DrivingSessionNotifier extends StateNotifier<DrivingSessionState> {
         state = state.copyWith(
           hereCompareMph: hereSecondary,
           remoteCompareMph: remoteMph,
+          remoteLimitFromCache: remoteFromCache,
         );
       }
       return;
@@ -239,6 +247,7 @@ class DrivingSessionNotifier extends StateNotifier<DrivingSessionState> {
         mapboxMph: null,
         hereCompareMph: hereSecondary,
         remoteCompareMph: remoteMph,
+        remoteLimitFromCache: remoteFromCache,
       );
       return;
     }
@@ -247,6 +256,7 @@ class DrivingSessionNotifier extends StateNotifier<DrivingSessionState> {
       mapboxMph: pm.isMapboxApiEnabled ? mb.peekCached()?.speedLimitMph : null,
       hereCompareMph: hereSecondary,
       remoteCompareMph: remoteMph,
+      remoteLimitFromCache: remoteFromCache,
     );
   }
 
@@ -346,6 +356,7 @@ class DrivingSessionNotifier extends StateNotifier<DrivingSessionState> {
           d++;
         }
         final pm = ref.read(preferencesProvider).preferencesManager;
+        final proc = _processor;
         state = state.copyWith(
           speedMph: vehicleMph,
           limitMph: limitMph,
@@ -359,6 +370,7 @@ class DrivingSessionNotifier extends StateNotifier<DrivingSessionState> {
                   source: 'LocationProcessor',
                 )
               : state.hereData,
+          remoteLimitFromCache: proc?.remotePrimaryFromCache ?? false,
         );
         _checkSpeedAlert(vehicleMph, limitMph);
       },
