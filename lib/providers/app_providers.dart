@@ -106,34 +106,25 @@ final speedLimitAggregatorProvider = Provider<SpeedLimitAggregator>((ref) {
 final authSessionProvider = StreamProvider<Session?>((ref) {
   final client = Supabase.instance.client;
 
-  final subject = BehaviorSubject<Session?>();
-
-  void emitSession(Session? session) {
-    if (!subject.isClosed) {
-      subject.add(session);
-    }
-  }
-
   final currentSession = client.auth.currentSession;
-  if (currentSession != null) {
-    subject.add(currentSession);
-  }
+  final subject = BehaviorSubject<Session?>.seeded(currentSession);
 
-  client.auth.onAuthStateChange.listen((data) {
+  final subscription = client.auth.onAuthStateChange.listen((data) {
     final event = data.event;
     final session = data.session;
-    print('Auth Event Received: $event, session=${session?.user.id ?? "null"}');
-    
     if (event == AuthChangeEvent.initialSession || 
         event == AuthChangeEvent.signedIn || 
         event == AuthChangeEvent.tokenRefreshed) {
-      emitSession(session);
+      if (!subject.isClosed) subject.add(session);
     } else if (event == AuthChangeEvent.signedOut) {
-      emitSession(null);
+      if (!subject.isClosed) subject.add(null);
     }
   });
 
-  ref.onDispose(() => subject.close());
+  ref.onDispose(() {
+    subscription.cancel();
+    subject.close();
+  });
 
   return subject.stream;
 });

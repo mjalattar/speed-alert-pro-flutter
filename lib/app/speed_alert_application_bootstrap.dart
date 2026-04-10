@@ -23,12 +23,15 @@ Future<void> runSupabaseAuthBootstrap() async {
 }
 
 /// Signs out if the current user is anonymous-only.
+/// Guards against empty identities — a Google-authenticated user may briefly
+/// have an empty identities list during session recovery; only sign out if
+/// the user is explicitly marked as anonymous by Supabase.
 Future<void> signOutIfAnonymousOnly() async {
   final user = Supabase.instance.client.auth.currentUser;
   if (user == null) return;
   final ids = user.identities ?? [];
-  final onlyAnonymous = ids.isEmpty ||
-      ids.every((i) => i.provider.trim().toLowerCase() == 'anonymous');
+  if (ids.isEmpty) return;
+  final onlyAnonymous = ids.every((i) => i.provider.trim().toLowerCase() == 'anonymous');
   if (onlyAnonymous) {
     await Supabase.instance.client.auth.signOut();
   }

@@ -608,19 +608,20 @@ function pickSpeedSpan(spans: HereSpanParsed[]): HereSpanParsed | null {
 
 /**
  * Same mph as Flutter `parseAlertFetchFromDecodedRoute` for the first route / first section.
+ * Also returns the stable segmentRef from the matched span for cache dedup.
  */
 export function parseAlertMphFromHereRoutesJson(
   root: unknown,
   lat: number,
   lng: number,
   headingDegrees: number | null | undefined,
-): number | null {
-  if (!root || typeof root !== "object") return null;
+): { mph: number | null; segmentRef: string | null } {
+  if (!root || typeof root !== "object") return { mph: null, segmentRef: null };
   const routes = (root as { routes?: unknown }).routes;
-  if (!Array.isArray(routes) || routes.length === 0) return null;
+  if (!Array.isArray(routes) || routes.length === 0) return { mph: null, segmentRef: null };
   const route = routes[0] as { sections?: unknown };
   const sections = route.sections;
-  if (!Array.isArray(sections) || sections.length === 0) return null;
+  if (!Array.isArray(sections) || sections.length === 0) return { mph: null, segmentRef: null };
   const section = sections[0] as {
     polyline?: unknown;
     spans?: unknown;
@@ -666,15 +667,19 @@ export function parseAlertMphFromHereRoutesJson(
     : 0;
 
   if (sectionModel != null) {
+    const matchedSpan = spanForAlong(sectionModel.slices, alongVehicle);
     const atAlong = speedLimitMphAtAlong(
       sectionModel.slices,
       sectionModel.totalLengthM,
       alongVehicle,
     );
-    if (atAlong != null) return atAlong;
+    if (atAlong != null) {
+      const segRef = matchedSpan?.segmentRef ?? null;
+      return { mph: atAlong, segmentRef: segRef };
+    }
     const fb = pickSpeedSpan(spans);
-    return mphFromSpan(fb);
+    return { mph: mphFromSpan(fb), segmentRef: fb?.segmentRef ?? null };
   }
   const fb = pickSpeedSpan(spans);
-  return mphFromSpan(fb);
+  return { mph: mphFromSpan(fb), segmentRef: fb?.segmentRef ?? null };
 }

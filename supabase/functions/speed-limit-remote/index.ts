@@ -22,7 +22,7 @@ type Body = {
 const HERE_ALERT_ROUTE_LEAD_METERS = 1000;
 
 /** Bump when alert mph extraction / cache shape changes so stale rows are not reused. */
-const HERE_ALERT_CACHE_RULE = "2026-04-floor-h30";
+const HERE_ALERT_CACHE_RULE = "2026-04-neighbors-segref";
 
 /** Origin coordinates floored to this many decimal places for cache keys. */
 const ORIGIN_DECIMALS = 3; // ~111 m cell
@@ -33,6 +33,13 @@ const HEADING_BUCKET_DEGREES = 30;
 function cacheFloor(n: number, decimals: number): number {
   const f = 10 ** decimals;
   return Math.floor(n * f) / f;
+}
+
+function headingBucket(headingDeg: number | null): number {
+  if (headingDeg != null && Number.isFinite(headingDeg)) {
+    return Math.floor((((headingDeg % 360) + 360) % 360) / HEADING_BUCKET_DEGREES) * HEADING_BUCKET_DEGREES;
+  }
+  return 0;
 }
 
 function cacheKeyAlert(
@@ -47,10 +54,44 @@ function cacheKeyAlert(
   if (hasExplicitDest) {
     return `${origin}|${cacheFloor(destLat, ORIGIN_DECIMALS)},${cacheFloor(destLng, ORIGIN_DECIMALS)}|${HERE_ALERT_CACHE_RULE}`;
   }
-  const h = headingDeg != null && Number.isFinite(headingDeg)
-    ? Math.floor((((headingDeg % 360) + 360) % 360) / HEADING_BUCKET_DEGREES) * HEADING_BUCKET_DEGREES
-    : 0;
+  const h = headingBucket(headingDeg);
   return `${origin}|h${h}|${HERE_ALERT_CACHE_RULE}`;
+}
+
+/** Generate cache keys for the 3×3 neighborhood around (lat, lng) + same heading bucket. */
+function neighborCacheKeys(
+  lat: number,
+  lng: number,
+  headingDeg: number | null,
+  hasExplicitDest: boolean,
+  destLat: number,
+  destLng: number,
+): string[] {
+  const keys: string[] = [];
+  const step = 1 / (10 ** ORIGIN_DECIMALS); // ~0.001 degrees ≈ 111 m
+  const h = headingBucket(headingDeg);
+  for (let dLat = -1; dLat <= 1; dLat++) {
+    for (let dLng = -1; dLng <= 1; dLng++) {
+      const nLat = cacheFloor(lat, ORIGIN_DECIMALS) + dLat * step;
+      const nLng = cacheFloor(lng, ORIGIN_DECIMALS) + dLng * step;
+      if (hasExplicitDest) {
+        keys.push(`${nLat},${nLng}|${cacheFloor(destLat, ORIGIN_DECIMALS)},${cacheFloor(destLng, ORIGIN_DECIMALS)}|${HERE_ALERT_CACHE_RULE}`);
+      } else {
+        keys.push(`${nLat},${nLng}|h${h}|${HERE_ALERT_CACHE_RULE}`);
+      }
+    }
+  }
+  return keys;
+}
+
+/** Stable segment key from a HERE segmentRef (strip direction suffix). */
+function stableSegmentKey(segmentRef: string | null | undefined): string | null {
+  if (!segmentRef || typeof segmentRef !== "string") return null;
+  const trimmed = segmentRef.trim();
+  if (!trimmed) return null;
+  const stableRef = trimmed.split("#")[0].trim();
+  if (!stableRef) return null;
+  return `seg:${stableRef}|${HERE_ALERT_CACHE_RULE}`;
 }
 
 async function fetchHereRoutesJson(
@@ -172,50 +213,103 @@ async function resolveHereAlertPayload(
   }
   const destination = `${destLat},${destLng}`;
 
-  const key = cacheKeyAlert(lat, lng, headingDeg, hasExplicitDest, destLat, destLng);
+  const exactKey = cacheKeyAlert(lat, lng, headingDeg, hasExplicitDest, destLat, destLng);
+  const neighborKeys = neighborCacheKeys(lat, lng, headingDeg, hasExplicitDest, destLat, destLng);
   const ttlHours = Number(Deno.env.get("CACHE_TTL_HOURS") ?? "24") || 24;
   const now = Date.now();
 
-  const { data: cached, error: cacheReadErr } = await admin
+  // Tier 1: probe exact key + 8 neighbor cells in one query
+  const { data: cachedRows, error: cacheReadErr } = await admin
     .from("speed_limit_cache")
-    .select("speed_limit_mph, expires_at")
-    .eq("cache_key", key)
-    .maybeSingle();
+    .select("cache_key, speed_limit_mph, expires_at")
+    .in("cache_key", neighborKeys);
 
-  if (!cacheReadErr && cached?.expires_at) {
-    const exp = Date.parse(String(cached.expires_at));
-    if (!Number.isNaN(exp) && exp > now && cached.speed_limit_mph != null) {
+  if (!cacheReadErr && cachedRows && cachedRows.length > 0) {
+    // Prefer exact key hit, then any non-expired neighbor hit
+    let exactHit: { speed_limit_mph: number; expires_at: string } | null = null;
+    let neighborHit: { speed_limit_mph: number; expires_at: string } | null = null;
+    for (const row of cachedRows) {
+      const exp = Date.parse(String(row.expires_at));
+      if (Number.isNaN(exp) || exp <= now) continue;
+      if (row.speed_limit_mph == null) continue;
+      if (row.cache_key === exactKey) {
+        exactHit = row;
+      } else if (!neighborHit) {
+        neighborHit = row;
+      }
+    }
+    const hit = exactHit ?? neighborHit;
+    if (hit) {
+      // If we found a neighbor hit but not an exact hit, backfill the exact key
+      if (!exactHit && neighborHit) {
+        const expiresAt = new Date(now + ttlHours * 3600_000).toISOString();
+        admin.from("speed_limit_cache").upsert(
+          {
+            cache_key: exactKey,
+            speed_limit_mph: neighborHit.speed_limit_mph,
+            fetched_at: new Date(now).toISOString(),
+            expires_at: expiresAt,
+          },
+          { onConflict: "cache_key" },
+        ).then(() => {}).catch(() => {});
+      }
       return {
-        speed_limit_mph: cached.speed_limit_mph,
+        speed_limit_mph: hit.speed_limit_mph,
         cached: true,
-        source: "cache",
+        source: exactHit ? "cache" : "cache_neighbor",
       };
     }
   }
 
+  // Cache miss — call HERE API
   const hereJson = await fetchHereRoutesJson(
     hereKey,
     origin,
     destination,
   );
-  const mph = parseAlertMphFromHereRoutesJson(
+  const parsed = parseAlertMphFromHereRoutesJson(
     hereJson,
     lat,
     lng,
     headingDeg,
   );
+  const mph = parsed.mph;
+  const segRef = parsed.segmentRef;
 
   if (mph != null) {
     const expiresAt = new Date(now + ttlHours * 3600_000).toISOString();
-    await admin.from("speed_limit_cache").upsert(
-      {
-        cache_key: key,
-        speed_limit_mph: mph,
-        fetched_at: new Date(now).toISOString(),
-        expires_at: expiresAt,
-      },
-      { onConflict: "cache_key" },
+    const cacheWrites: Promise<unknown>[] = [];
+
+    // Write Tier 1: geo+heading cache key
+    cacheWrites.push(
+      admin.from("speed_limit_cache").upsert(
+        {
+          cache_key: exactKey,
+          speed_limit_mph: mph,
+          fetched_at: new Date(now).toISOString(),
+          expires_at: expiresAt,
+        },
+        { onConflict: "cache_key" },
+      ),
     );
+
+    // Write Tier 2: segmentRef dedup key
+    const segKey = stableSegmentKey(segRef);
+    if (segKey) {
+      cacheWrites.push(
+        admin.from("speed_limit_cache").upsert(
+          {
+            cache_key: segKey,
+            speed_limit_mph: mph,
+            fetched_at: new Date(now).toISOString(),
+            expires_at: expiresAt,
+          },
+          { onConflict: "cache_key" },
+        ),
+      );
+    }
+
+    await Promise.allSettled(cacheWrites);
   }
 
   return {
