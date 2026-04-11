@@ -64,7 +64,22 @@ class PreferencesManager {
     'ui_theme_mode',
     'suppress_alerts_under_15_mph',
     'flutter_driving_tracking_active',
+    // Session persistence keys — required for Supabase auth and custom recovery.
+    'speed_alert_pro_session_json',
   };
+
+  /// Build the full allow list including the Supabase auth key derived from the project URL.
+  static Set<String> buildFullAllowList() {
+    final list = Set<String>.from(androidNativePrefsAllowList);
+    final supabaseUrl = AppConfig.supabaseUrl.trim();
+    if (supabaseUrl.isNotEmpty) {
+      try {
+        final host = Uri.parse(supabaseUrl).host.split('.').first;
+        list.add('sb-$host-auth-token');
+      } catch (_) {}
+    }
+    return list;
+  }
 
   /// Call **before** [SharedPreferences.getInstance] on Android so native XML keys resolve without a prefix.
   static void registerAndroidSharedPrefsAllowListBeforeOpen() {
@@ -73,7 +88,7 @@ class PreferencesManager {
       if (defaultTargetPlatform == TargetPlatform.android) {
         SharedPreferences.setPrefix(
           '',
-          allowList: androidNativePrefsAllowList,
+          allowList: buildFullAllowList(),
         );
       }
     } catch (_) {

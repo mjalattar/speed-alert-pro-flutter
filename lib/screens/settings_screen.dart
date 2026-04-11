@@ -6,11 +6,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../config/app_config.dart';
 import '../core/constants.dart';
 import '../providers/app_providers.dart';
+import '../services/app_permissions.dart';
 import '../services/overlay_permission_platform.dart';
 import '../widgets/simulation_destination_settings.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
+
+  static Future<bool> requestBackgroundPermissions(BuildContext context) => _requestBackgroundPermissions(context);
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -72,67 +75,7 @@ class SettingsScreen extends ConsumerWidget {
               ),
             ],
           ),
-          const Divider(),
-          Text('Alert run mode', style: Theme.of(context).textTheme.titleMedium),
-          RadioListTile<int>(
-            title: const Text('Normal (in-app only)'),
-            subtitle: const Text(
-              'Audible alerts only while the app is visible. '
-              'When you leave the app, HERE speed processing pauses (same as Android).',
-            ),
-            value: AlertRunMode.normal,
-            groupValue: preferencesManager.alertRunMode,
-            onChanged: (v) {
-              if (v != null) {
-                preferencesManager.alertRunMode = v;
-                ref.read(prefsRevisionProvider.notifier).state++;
-              }
-            },
-          ),
-          RadioListTile<int>(
-            title: const Text('Background sound'),
-            value: AlertRunMode.backgroundSound,
-            groupValue: preferencesManager.alertRunMode,
-            onChanged: (v) {
-              if (v != null) {
-                preferencesManager.alertRunMode = v;
-                ref.read(prefsRevisionProvider.notifier).state++;
-              }
-            },
-          ),
-          RadioListTile<int>(
-            title: const Text('Background overlay'),
-            subtitle: const Text(
-              'Audible + MethodChannel overlay HUD when another app is on screen (register '
-              'speed_alert_pro/overlay in Android MainActivity; grant “display over other apps”).',
-            ),
-            value: AlertRunMode.backgroundOverlay,
-            groupValue: preferencesManager.alertRunMode,
-            onChanged: (v) {
-              if (v != null) {
-                preferencesManager.alertRunMode = v;
-                ref.read(prefsRevisionProvider.notifier).state++;
-                if (v == AlertRunMode.backgroundOverlay) {
-                  unawaited(
-                    OverlayPermissionPlatform.primeAttemptAndOpenManageScreen(),
-                  );
-                }
-              }
-            },
-          ),
-          if (preferencesManager.alertRunMode == AlertRunMode.backgroundOverlay)
-            SwitchListTile(
-              title: const Text('Overlay HUD minimized'),
-              subtitle: const Text(
-                'Hide the floating overlay until the app is in the foreground again.',
-              ),
-              value: preferencesManager.isOverlayHudMinimized,
-              onChanged: (v) {
-                preferencesManager.isOverlayHudMinimized = v;
-                ref.read(prefsRevisionProvider.notifier).state++;
-              },
-            ),
-          const Divider(),
+const Divider(),
           Text('Appearance', style: Theme.of(context).textTheme.titleMedium),
           RadioListTile<int>(
             title: const Text('System'),
@@ -284,5 +227,54 @@ class SettingsScreen extends ConsumerWidget {
       ),
       ),
     );
+  }
+
+  static Future<bool> _requestBackgroundPermissions(BuildContext context) async {
+    final bgLocationGranted = await AppPermissions.isBackgroundLocationGranted();
+
+    if (!bgLocationGranted) {
+      if (context.mounted) {
+        final proceed = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Background Location'),
+            content: const Text(
+              'Speed Alert Pro needs "Allow all the time" location access to alert you about speed limits while driving with the screen off.\n\n'
+              'On the next screen, select "Allow all the time".',
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
+              TextButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Continue')),
+            ],
+          ),
+        );
+        if (proceed != true) return false;
+        await AppPermissions.ensureLocationPermission();
+      }
+    }
+
+    final batteryExempt = await AppPermissions.isBatteryOptimizationExempt();
+    if (!batteryExempt) {
+      if (context.mounted) {
+        final proceed = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Unrestricted Battery'),
+            content: const Text(
+              'For reliable background alerts, allow Speed Alert Pro to run without battery restrictions.\n\n'
+              'On the next screen, select "Allow".',
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
+              TextButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Continue')),
+            ],
+          ),
+        );
+        if (proceed != true) return false;
+        await AppPermissions.requestBatteryOptimizationExemption();
+      }
+    }
+
+    return true;
   }
 }

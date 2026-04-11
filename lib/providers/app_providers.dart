@@ -1,11 +1,13 @@
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:rxdart/rxdart.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../config/app_config.dart';
 import '../core/app_foreground_tracker.dart';
+import '../core/constants.dart' show SpeedLimitPrimaryProvider;
+import '../services/auth/auth_check_service.dart';
+import '../services/auth/auth_session_provider.dart';
 import '../services/mapbox/speed_provider.dart';
 import '../services/tomtom/speed_provider.dart';
 import '../services/here/api_service.dart';
@@ -13,7 +15,6 @@ import '../services/here/here_alert_route_provider.dart';
 import '../services/remote/edge_function_client.dart';
 import '../services/remote/remote_alert_route_provider.dart';
 import '../services/preferences_manager.dart';
-import '../services/entitlement_repository.dart';
 import '../services/speed_limit_aggregator.dart';
 
 PreferencesManager? _globalPrefs;
@@ -103,35 +104,19 @@ final speedLimitAggregatorProvider = Provider<SpeedLimitAggregator>((ref) {
   );
 });
 
-final authSessionProvider = StreamProvider<Session?>((ref) {
-  final client = Supabase.instance.client;
-
-  final currentSession = client.auth.currentSession;
-  final subject = BehaviorSubject<Session?>.seeded(currentSession);
-
-  final subscription = client.auth.onAuthStateChange.listen((data) {
-    final event = data.event;
-    final session = data.session;
-    if (event == AuthChangeEvent.initialSession || 
-        event == AuthChangeEvent.signedIn || 
-        event == AuthChangeEvent.tokenRefreshed) {
-      if (!subject.isClosed) subject.add(session);
-    } else if (event == AuthChangeEvent.signedOut) {
-      if (!subject.isClosed) subject.add(null);
-    }
-  });
-
-  ref.onDispose(() {
-    subscription.cancel();
-    subject.close();
-  });
-
-  return subject.stream;
-});
-
+/// Server-side access check via auth-check edge function.
+/// Applies to the entire app regardless of which speed limit provider is selected.
 final entitlementAccessProvider = FutureProvider.autoDispose<bool>((ref) async {
-  final snap = ref.watch(preferencesProvider);
-  return EntitlementRepository.hasPremiumAccess(
-    preferencesManager: snap.preferencesManager,
-  );
+  if (!AppConfig.useRemoteHere) {
+    return true;
+  }
+
+  // Always call the edge function fresh for authoritative access decision.
+  final result = await AuthCheckService.checkAccess();
+  if (result != null) {
+    return result.accessAllowed;
+  }
+
+  // If auth-check failed (offline), allow access to avoid blocking the user.
+  return true;
 });

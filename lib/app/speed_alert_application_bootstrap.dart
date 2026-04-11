@@ -1,56 +1,57 @@
 import 'dart:developer' as developer;
 
+import 'package:flutter/foundation.dart';
 import 'package:purchases_flutter/purchases_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../config/app_config.dart';
+import '../services/auth/auth_check_service.dart';
 
-/// Post–Supabase-init bootstrap: drop anonymous-only sessions and sync RevenueCat when a real session exists.
+/// Post–Supabase-init bootstrap: ensure a session exists, sync RevenueCat,
+/// and check subscription access — runs in the background after first frame.
 Future<void> runSupabaseAuthBootstrap() async {
   try {
-    await signOutIfAnonymousOnly();
-    if (hasGoogleOrNonAnonymousSession()) {
-      await syncRevenueCatWithSupabaseUser();
+    var session = Supabase.instance.client.auth.currentSession;
+    if (session == null) {
+      debugPrint('[AUTH BOOTSTRAP] No session — attempting refreshSession...');
+      try {
+        final response = await Supabase.instance.client.auth.refreshSession();
+        session = response.session;
+        debugPrint('[AUTH BOOTSTRAP] refreshSession result: ${session != null ? 'uid=${session.user.id}' : 'null'}');
+      } catch (e) {
+        debugPrint('[AUTH BOOTSTRAP] refreshSession failed: $e');
+      }
+    }
+
+    if (session == null) {
+      debugPrint('[AUTH BOOTSTRAP] No recoverable session — signing in anonymously...');
+      await Supabase.instance.client.auth.signInAnonymously();
+      session = Supabase.instance.client.auth.currentSession;
+      debugPrint('[AUTH BOOTSTRAP] Anonymous sign-in result: ${session != null ? 'uid=${session.user.id}' : 'null'}');
+    } else {
+      debugPrint('[AUTH BOOTSTRAP] Existing session: uid=${session.user.id}, isAnonymous=${session.user.isAnonymous}');
     }
   } catch (e, st) {
     developer.log(
-      'Supabase auth init failed',
+      'Supabase auth bootstrap failed',
       name: 'SpeedAlertApp',
       error: e,
       stackTrace: st,
     );
   }
+
+  _backgroundSync();
 }
 
-/// Signs out if the current user is anonymous-only.
-/// Guards against empty identities — a Google-authenticated user may briefly
-/// have an empty identities list during session recovery; only sign out if
-/// the user is explicitly marked as anonymous by Supabase.
-Future<void> signOutIfAnonymousOnly() async {
-  final user = Supabase.instance.client.auth.currentUser;
-  if (user == null) return;
-  final ids = user.identities ?? [];
-  if (ids.isEmpty) return;
-  final onlyAnonymous = ids.every((i) => i.provider.trim().toLowerCase() == 'anonymous');
-  if (onlyAnonymous) {
-    await Supabase.instance.client.auth.signOut();
-  }
-}
-
-/// True when a session exists with at least one non-anonymous identity.
-bool hasGoogleOrNonAnonymousSession() {
-  if (Supabase.instance.client.auth.currentSession == null) return false;
-  final user = Supabase.instance.client.auth.currentUser;
-  if (user == null) return false;
-  final ids = user.identities ?? [];
-  if (ids.isEmpty) return false;
-  return ids.any((i) => i.provider.trim().toLowerCase() != 'anonymous');
-}
-
-/// Associates RevenueCat with the signed-in Supabase user id.
-Future<void> syncRevenueCatWithSupabaseUser() async {
-  final uid = Supabase.instance.client.auth.currentUser?.id;
-  if (uid == null) return;
-  if (AppConfig.revenueCatPublicApiKey.isEmpty) return;
-  await Purchases.logIn(uid);
+void _backgroundSync() {
+  (() async {
+    try {
+      final uid = Supabase.instance.client.auth.currentUser?.id;
+      if (uid != null && AppConfig.revenueCatPublicApiKey.isNotEmpty) {
+        await Purchases.logIn(uid);
+      }
+    } catch (e) {
+      debugPrint('[AUTH BOOTSTRAP] RevenueCat sync error: $e');
+    }
+  })();
 }

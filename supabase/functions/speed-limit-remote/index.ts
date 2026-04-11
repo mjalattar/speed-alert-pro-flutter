@@ -2,13 +2,58 @@
 // Secrets: HERE_API_KEY; optional REVENUECAT_SECRET_API_KEY, RC_ENTITLEMENT_ID, CACHE_TTL_HOURS
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import { corsHeaders, verifyJwt } from "../_shared/auth.ts";
 import { parseAlertMphFromHereRoutesJson } from "./speed_limit_remote.ts";
 
-const corsHeaders: Record<string, string> = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-};
+async function verifySubscriptionAccess(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+): Promise<{ allowed: boolean; error: Response | null }> {
+  const { data: profile, error: profErr } = await admin
+    .from("profiles")
+    .select("trial_ends_at, subscription_active, subscription_checked_at")
+    .eq("id", userId)
+    .maybeSingle();
+
+  if (profErr) {
+    console.error("profiles read", profErr);
+  }
+
+  // Check trial
+  const trialEndsIso: string | null =
+    profile?.trial_ends_at != null ? String(profile.trial_ends_at) : null;
+  if (
+    trialEndsIso != null &&
+    !Number.isNaN(Date.parse(trialEndsIso)) &&
+    Date.parse(trialEndsIso) > Date.now()
+  ) {
+    return { allowed: true, error: null };
+  }
+
+  // Check subscription_active from auth-check + staleness
+  if (profile?.subscription_active === true) {
+    const checkedAt = profile.subscription_checked_at;
+    if (checkedAt != null) {
+      const ageMs = Date.now() - Date.parse(String(checkedAt));
+      // Allow if checked within the last 24 hours
+      if (!Number.isNaN(ageMs) && ageMs < 24 * 3600_000) {
+        return { allowed: true, error: null };
+      }
+    }
+  }
+
+  return {
+    allowed: false,
+    error: new Response(
+      JSON.stringify({
+        error: "subscription_required",
+        message:
+          "Free trial ended or no active subscription. Please re-open the app to verify access, or subscribe in the app.",
+      }),
+      { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    ),
+  };
+}
 
 type Body = {
   lat: number;
@@ -113,52 +158,6 @@ async function fetchHereRoutesJson(
     throw new Error(`HERE HTTP ${res.status}: ${text.slice(0, 400)}`);
   }
   return JSON.parse(text);
-}
-
-async function userMayAccessSpeedApi(
-  userId: string,
-  trialEndsAtIso: string | null,
-  rcSecret: string | undefined,
-  entitlementId: string,
-): Promise<boolean> {
-  const trialOk =
-    trialEndsAtIso != null &&
-    !Number.isNaN(Date.parse(trialEndsAtIso)) &&
-    Date.parse(trialEndsAtIso) > Date.now();
-  if (trialOk) return true;
-
-  if (!rcSecret || rcSecret.length === 0) {
-    return false;
-  }
-
-  const rcRes = await fetch(
-    `https://api.revenuecat.com/v1/subscribers/${encodeURIComponent(userId)}`,
-    {
-      headers: {
-        Authorization: `Bearer ${rcSecret}`,
-        "Content-Type": "application/json",
-      },
-    },
-  );
-  if (!rcRes.ok) {
-    console.warn("RevenueCat subscriber fetch failed", rcRes.status);
-    return false;
-  }
-  const body = (await rcRes.json()) as {
-    subscriber?: {
-      entitlements?: {
-        [k: string]: { expires_date?: string | null; is_active?: boolean };
-      };
-    };
-  };
-  const ent = body.subscriber?.entitlements?.[entitlementId];
-  if (!ent) return false;
-  if (ent.is_active === true) return true;
-  if (ent.expires_date) {
-    const t = Date.parse(ent.expires_date);
-    return !Number.isNaN(t) && t > Date.now();
-  }
-  return false;
 }
 
 function offsetLatLngMeters(
@@ -362,63 +361,17 @@ Deno.serve(async (req: Request) => {
     const supabaseAnon = Deno.env.get("SUPABASE_ANON_KEY")!;
     const supabaseService = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-    const userClient = createClient(supabaseUrl, supabaseAnon, {
-      global: { headers: { Authorization: `Bearer ${jwt}` } },
-    });
-    const {
-      data: { user },
-      error: userErr,
-    } = await userClient.auth.getUser(jwt);
-    if (userErr || !user) {
-      return new Response(
-        JSON.stringify({ error: "Invalid or expired session" }),
-        {
-          status: 401,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        },
-      );
-    }
+    const { user, error: authError } = await verifyJwt(
+      supabaseUrl,
+      supabaseAnon,
+      jwt,
+    );
+    if (authError) return authError;
 
     const admin = createClient(supabaseUrl, supabaseService);
 
-    const { data: profile, error: profErr } = await admin
-      .from("profiles")
-      .select("trial_ends_at")
-      .eq("id", user.id)
-      .maybeSingle();
-
-    if (profErr) {
-      console.error("profiles read", profErr);
-    }
-
-    const trialEnds =
-      profile?.trial_ends_at != null
-        ? String(profile.trial_ends_at)
-        : null;
-
-    const rcSecret = Deno.env.get("REVENUECAT_SECRET_API_KEY");
-    const entitlementId = Deno.env.get("RC_ENTITLEMENT_ID") ?? "premium";
-
-    const allowed = await userMayAccessSpeedApi(
-      user.id,
-      trialEnds,
-      rcSecret ?? undefined,
-      entitlementId,
-    );
-
-    if (!allowed) {
-      return new Response(
-        JSON.stringify({
-          error: "subscription_required",
-          message:
-            "Free trial ended or no active subscription. Please subscribe in the app.",
-        }),
-        {
-          status: 402,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        },
-      );
-    }
+    const { allowed, error: accessError } = await verifySubscriptionAccess(admin, user.id);
+    if (!allowed && accessError) return accessError;
 
     let body: Body;
     try {

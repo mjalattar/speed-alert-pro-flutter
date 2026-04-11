@@ -14,9 +14,7 @@ import '../widgets/speed_session_summary_card.dart';
 
 /// Testing tab: speed/limit card, map, and road-test simulator.
 class TestingScreen extends ConsumerStatefulWidget {
-  const TestingScreen({super.key, this.tabActive = true});
-
-  final bool tabActive;
+  const TestingScreen({super.key});
 
   @override
   ConsumerState<TestingScreen> createState() => _TestingScreenState();
@@ -107,8 +105,6 @@ class _TestingScreenState extends ConsumerState<TestingScreen> {
 
     final h = MediaQuery.sizeOf(context).height;
     final mapHeight = (h * 0.33).clamp(160.0, 360.0);
-    final showPlatformMap = widget.tabActive;
-
     final edge = ref.watch(remoteEdgeFunctionClientProvider);
     final canSimViaRemote = AppConfig.useRemoteHere &&
         preferencesManager.isRemoteApiEnabled &&
@@ -163,6 +159,13 @@ class _TestingScreenState extends ConsumerState<TestingScreen> {
     }
 
     return Scaffold(
+      appBar: AppBar(
+        title: const Text('Simulation Mode'),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+      ),
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -203,8 +206,7 @@ class _TestingScreenState extends ConsumerState<TestingScreen> {
                 borderRadius: const BorderRadius.vertical(
                   bottom: Radius.circular(12),
                 ),
-                child: showPlatformMap
-                    ? GoogleMap(
+                child: GoogleMap(
                         initialCameraPosition: const CameraPosition(
                           target: _leagueCity,
                           zoom: 12,
@@ -222,14 +224,6 @@ class _TestingScreenState extends ConsumerState<TestingScreen> {
                             _scheduleFitSimulationRoute(r);
                           }
                         },
-                      )
-                    : ColoredBox(
-                        color: Theme.of(context)
-                            .colorScheme
-                            .surfaceContainerHighest,
-                        child: const Center(
-                          child: Icon(Icons.map_outlined, size: 40),
-                        ),
                       ),
               ),
             ),

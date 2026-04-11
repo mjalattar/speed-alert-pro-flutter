@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:gotrue/gotrue.dart' show OAuthProvider;
@@ -6,11 +7,11 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../config/app_config.dart';
 
-/// Google Sign-In → Supabase session → optional RevenueCat [logIn].
+/// Google Sign-In → Supabase identity link (or sign-in) → optional RevenueCat [logIn].
 ///
-/// Note: Android uses Credential Manager with a SHA-256 hashed nonce; `google_sign_in` 6.x has no
-/// nonce on [GoogleSignIn]. If your Supabase project requires nonce for Google, upgrade
-/// `google_sign_in` or use a platform channel. Most projects accept ID token without nonce.
+/// If the user has an anonymous Supabase session, this links the Google identity
+/// to it so the account upgrades in-place. If no anonymous session exists, it
+/// creates a new authenticated session.
 class GoogleAuthService {
   GoogleAuthService._();
 
@@ -38,12 +39,27 @@ class GoogleAuthService {
       throw StateError('No Google ID token');
     }
 
-    await Supabase.instance.client.auth.signInWithIdToken(
-      provider: OAuthProvider.google,
-      idToken: idToken,
-    );
+    final client = Supabase.instance.client;
+    final currentUser = client.auth.currentUser;
+    final isAnonymous = currentUser?.isAnonymous ?? false;
 
-    final uid = Supabase.instance.client.auth.currentUser?.id;
+    if (isAnonymous) {
+      // Link Google identity to the existing anonymous account
+      debugPrint('[AUTH] Linking Google identity to anonymous account...');
+      await client.auth.linkIdentityWithIdToken(
+        provider: OAuthProvider.google,
+        idToken: idToken,
+      );
+      debugPrint('[AUTH] Google identity linked successfully');
+    } else {
+      // No anonymous session — sign in with Google
+      await client.auth.signInWithIdToken(
+        provider: OAuthProvider.google,
+        idToken: idToken,
+      );
+    }
+
+    final uid = client.auth.currentUser?.id;
     if (uid != null && AppConfig.revenueCatPublicApiKey.isNotEmpty) {
       await Purchases.logIn(uid);
     }

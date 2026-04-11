@@ -44,9 +44,9 @@ Future<void> main() async {
           autoRefreshToken: true,
         ),
       );
-      print('Supabase initialized');
-      await runSupabaseAuthBootstrap();
-    } catch (e, st) {
+      // Bootstrap runs in the background after the first frame renders,
+      // so the UI appears immediately instead of blocking on network calls.
+    } catch (e) {
       debugPrint('Supabase init failed (offline or bad URL): $e');
     }
   }

@@ -10,7 +10,7 @@ plugins {
 android {
     namespace = "com.example.speed_alert_pro"
     compileSdk = flutter.compileSdkVersion
-    ndkVersion = flutter.ndkVersion
+    ndkVersion = "27.0.12077973"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

@@ -14,8 +14,10 @@ Run Supabase CLI commands from **this directory** (`speed-alert-pro-flutter/supa
 
 1) Create a Supabase project (https://supabase.com).
 
-2) SQL: open SQL Editor, paste and run:
-   supabase/migrations/20250329120000_profiles_speed_cache.sql
+2) SQL: open SQL Editor, paste and run (in order):
+    supabase/migrations/20250329120000_profiles_speed_cache.sql
+    supabase/migrations/20260409000000_cache_key_coarse_grid_heading_bucket.sql
+    supabase/migrations/20260410000000_profiles_subscription_fields.sql
 
    If the trigger fails on your Postgres version, replace the last line with:
    ... FOR EACH ROW EXECUTE PROCEDURE public.handle_new_user();
@@ -28,19 +30,39 @@ Run Supabase CLI commands from **this directory** (`speed-alert-pro-flutter/supa
      In “Client IDs”, include the Web client ID and Android client ID (comma-separated if the UI allows multiple).
    - You can turn off “Anonymous sign-ins”; the app signs in with Google only (ID token).
 
-4) Edge Function `speed-limit-remote`:
-   - Install Supabase CLI, then from this repo’s `supabase` folder:
-     supabase link --project-ref YOUR_PROJECT_REF
-     supabase secrets set HERE_API_KEY=your_here_rest_key
-   Multi-provider compare (recommended): same function handles kind=compare and calls TomTom + Mapbox on the server:
-     supabase secrets set TOMTOM_API_KEY=your_tomtom_key
-     supabase secrets set MAPBOX_ACCESS_TOKEN=pk.your_mapbox_token
-     TomTom: use a key allowed from **server** IPs. Keys restricted to Android package or HTTP referrer
-     return HTTP 403 from Edge (the app may still show TomTom’s JSON error, e.g. insufficient funds, when calling TomTom directly).
-   Optional (recommended for production):
-     supabase secrets set REVENUECAT_SECRET_API_KEY=your_rc_secret_key
-     supabase secrets set RC_ENTITLEMENT_ID=premium
-     supabase secrets set CACHE_TTL_HOURS=24
+4) Edge Functions:
+     a) `auth-check` — Authentication + RevenueCat subscription verification (independent from speed-limit-remote):
+        Verifies JWT, checks trial period, calls RevenueCat, and stores result in `profiles.subscription_active` / `subscription_checked_at`.
+        The app calls this on startup and after sign-in. No HERE key needed.
+        Deploy:
+          supabase functions deploy auth-check --no-verify-jwt
+        Required secrets:
+          supabase secrets set REVENUECAT_SECRET_API_KEY=your_rc_secret_key
+          supabase secrets set RC_ENTITLEMENT_ID=premium
+
+     b) `speed-limit-remote` — HERE proxy + cache (verifies JWT, checks subscription via profiles table):
+        Deploy:
+          supabase functions deploy speed-limit-remote --no-verify-jwt
+        Required secrets:
+          supabase secrets set HERE_API_KEY=your_here_rest_key
+          supabase secrets set CACHE_TTL_HOURS=24
+        (Alert cache key uses ~111 m–grid origin + 30° heading bucket + 3×3 neighbor probe;
+         longer TTL cuts duplicate HERE transactions for many subscribers on the same road.)
+
+     Shared secrets (both functions need these, set once):
+       supabase secrets set SUPABASE_URL=https://YOUR_REF.supabase.co
+       supabase secrets set SUPABASE_ANON_KEY=your_anon_key
+       supabase secrets set SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
+
+    b) `auth-check` — Authentication + RevenueCat subscription verification (independent from speed-limit-remote):
+       This function verifies the JWT, checks the trial period, calls RevenueCat,
+       and stores the result in `profiles.subscription_active` / `subscription_checked_at`.
+       The app calls this on startup and after sign-in.
+       Deploy:
+         supabase functions deploy auth-check --no-verify-jwt
+       Required secret:
+         supabase secrets set REVENUECAT_SECRET_API_KEY=your_rc_secret_key
+         supabase secrets set RC_ENTITLEMENT_ID=premium
 (Alert cache key uses ~111 m–grid origin + 15° heading bucket; longer TTL cuts duplicate HERE transactions
       for many subscribers on the same road. Keep compare flows in mind if you shorten TTL.)
    Deploy:

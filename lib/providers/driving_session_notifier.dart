@@ -15,6 +15,7 @@ import '../engine/here/section_speed_model.dart';
 import '../models/speed_limit_data.dart';
 import '../services/mapbox/speed_provider.dart';
 import '../services/tomtom/speed_provider.dart';
+import '../services/app_permissions.dart';
 import '../services/fused_driving_location.dart';
 import '../services/location_processor.dart';
 import '../services/mock_location_tester.dart';
@@ -168,12 +169,8 @@ class DrivingSessionNotifier extends StateNotifier<DrivingSessionState> {
   bool _geoDrainRunning = false;
 
   Future<bool> _ensureLocationPermission() async {
-    var perm = await Geolocator.checkPermission();
-    if (perm == LocationPermission.denied) {
-      perm = await Geolocator.requestPermission();
-    }
-    if (perm == LocationPermission.deniedForever ||
-        perm == LocationPermission.denied) {
+    final granted = await AppPermissions.ensureLocationPermission();
+    if (!granted) {
       state = state.copyWith(permissionDenied: true, lastError: 'Location denied');
       return false;
     }

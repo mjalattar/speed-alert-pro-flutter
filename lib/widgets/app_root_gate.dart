@@ -1,15 +1,16 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:purchases_flutter/purchases_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../config/app_config.dart';
-import '../core/constants.dart' show SpeedLimitPrimaryProvider;
+import '../services/auth/auth_check_service.dart';
+import '../services/auth/auth_session_provider.dart';
 import '../providers/app_providers.dart';
-import '../screens/google_sign_in_screen.dart';
 import '../screens/subscription_paywall_screen.dart';
 
-/// When [AppConfig.useRemoteHere]: Google sign-in (outer) then trial / RevenueCat paywall (inner).
+/// When [AppConfig.useRemoteHere]: always show main content (anonymous or signed-in).
+/// The inner [EntitlementGate] checks trial/subscription and shows the paywall if needed.
 class AppRootGate extends ConsumerWidget {
   const AppRootGate({super.key, required this.child});
 
@@ -21,18 +22,9 @@ class AppRootGate extends ConsumerWidget {
       return child;
     }
 
-    // Listen for session changes to update RevenueCat
-    ref.listen<AsyncValue<Session?>>(authSessionProvider, (prev, next) async {
-      next.whenData((session) async {
-        if (session != null && AppConfig.revenueCatPublicApiKey.isNotEmpty) {
-          try {
-            await Purchases.logIn(session.user.id);
-          } catch (_) {}
-        }
-      });
-    });
-
     final auth = ref.watch(authSessionProvider);
+    debugPrint('[AUTH GATE] auth state: ${auth.when(loading: () => 'LOADING', error: (e, st) => 'ERROR: $e', data: (s) => s != null ? 'uid=${s.user.id} anon=${s.user.isAnonymous}' : 'session=null')}');
+
     return auth.when(
       loading: () => const Scaffold(
         body: Center(child: CircularProgressIndicator()),
@@ -41,9 +33,9 @@ class AppRootGate extends ConsumerWidget {
         body: Center(child: Text('Auth error: $e')),
       ),
       data: (session) {
-        if (session == null) {
-          return const GoogleSignInScreen();
-        }
+        // Both anonymous and signed-in users reach the main content.
+        // The EntitlementGate handles subscription/trial checks.
+        // No session at all = still initializing; bootstrap will create anonymous.
         return EntitlementGate(child: child);
       },
     );
@@ -57,16 +49,12 @@ class EntitlementGate extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final preferencesManager =
-        ref.watch(preferencesProvider).preferencesManager;
-    final primary = preferencesManager.resolvedPrimarySpeedLimitProvider;
-    if (!AppConfig.useRemoteHere ||
-        !preferencesManager.isRemoteApiEnabled ||
-        primary != SpeedLimitPrimaryProvider.remote) {
+    if (!AppConfig.useRemoteHere) {
       return child;
     }
 
     final access = ref.watch(entitlementAccessProvider);
+    debugPrint('[ENTITLEMENT GATE] access=$access');
     return access.when(
       loading: () => const Scaffold(
         body: Center(child: CircularProgressIndicator()),
@@ -75,6 +63,7 @@ class EntitlementGate extends ConsumerWidget {
         body: Center(child: Text('$e')),
       ),
       data: (ok) {
+        debugPrint('[ENTITLEMENT GATE] ok=$ok, showing ${ok ? 'main' : 'paywall'}');
         if (!ok) {
           return SubscriptionPaywallScreen(
             onUnlocked: () =>

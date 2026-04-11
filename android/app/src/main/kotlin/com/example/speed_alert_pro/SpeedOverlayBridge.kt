@@ -18,7 +18,7 @@ import kotlin.math.roundToInt
 
 /**
  * Floating overlay HUD: TYPE_APPLICATION_OVERLAY, speed/limit text,
- * − (minimize → Dart), × (stop tracking → Dart).
+ * × (stop tracking → Dart).
  */
 class SpeedOverlayBridge(
     private val context: Context,
@@ -113,15 +113,6 @@ class SpeedOverlayBridge(
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.END
         }
-        val btnMin = TextView(appContext).apply {
-            text = "−"
-            textSize = 18f
-            setTextColor(Color.WHITE)
-            setPadding(pad, 0, pad, 0)
-            setOnClickListener {
-                channel.invokeMethod("onMinimize", null)
-            }
-        }
         val btnClose = TextView(appContext).apply {
             text = "×"
             textSize = 18f
@@ -130,7 +121,6 @@ class SpeedOverlayBridge(
                 channel.invokeMethod("onStopMonitoring", null)
             }
         }
-        titleRow.addView(btnMin)
         titleRow.addView(btnClose)
         val speedTv = TextView(appContext).apply {
             tag = "speed"
