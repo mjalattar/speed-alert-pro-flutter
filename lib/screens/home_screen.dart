@@ -13,6 +13,7 @@ import '../widgets/speed_session_summary_card.dart';
 import '../core/constants.dart';
 import '../config/app_config.dart';
 import '../services/app_permissions.dart';
+import '../services/system_ui.dart';
 import 'package:flutter/services.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -190,12 +191,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               subtitle: const Text('Audible speed alerts even when using other apps'),
               secondary: FilledButton.tonal(
                 onPressed: () async {
-                  final granted = await SettingsScreen.requestBackgroundPermissions(context);
-                  if (context.mounted) {
-                    preferencesManager.alertRunMode = granted
-                        ? AlertRunMode.backgroundSound
-                        : AlertRunMode.normal;
+                  final ok = await SettingsScreen.requestBackgroundPermissions(context);
+                  if (!context.mounted) return;
+                  if (!ok) {
+                    preferencesManager.alertRunMode = AlertRunMode.normal;
                     ref.read(prefsRevisionProvider.notifier).state++;
+                    return;
+                  }
+                  preferencesManager.alertRunMode = AlertRunMode.backgroundSound;
+                  ref.read(prefsRevisionProvider.notifier).state++;
+                  await Future.delayed(const Duration(milliseconds: 50));
+                  if (context.mounted) {
+                    await SystemUi.moveTaskToBack();
                   }
                 },
                 child: const Text('Go'),
@@ -214,15 +221,30 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               subtitle: const Text('Floating speed HUD and alerts over other apps'),
               secondary: FilledButton.tonal(
                 onPressed: () async {
-                  final granted = await SettingsScreen.requestBackgroundPermissions(context);
-                  if (context.mounted) {
-                    preferencesManager.alertRunMode = granted
-                        ? AlertRunMode.backgroundOverlay
-                        : AlertRunMode.normal;
+                  final ok = await SettingsScreen.requestBackgroundPermissions(context);
+                  if (!context.mounted) return;
+                  if (!ok) {
+                    preferencesManager.alertRunMode = AlertRunMode.normal;
                     ref.read(prefsRevisionProvider.notifier).state++;
-                    if (granted) {
-                      unawaited(OverlayPermissionPlatform.primeAttemptAndOpenManageScreen());
-                    }
+                    return;
+                  }
+                  // Location + battery done, now check overlay
+                  final overlayGranted = await OverlayPermissionPlatform.isOverlayPermissionGranted();
+                  if (!context.mounted) return;
+                  if (!overlayGranted) {
+                    preferencesManager.alertRunMode = AlertRunMode.backgroundOverlay;
+                    ref.read(prefsRevisionProvider.notifier).state++;
+                    // Open overlay settings — user comes back and taps Go again
+                    unawaited(OverlayPermissionPlatform.primeAttemptAndOpenManageScreen());
+                    return;
+                  }
+                  // All permissions granted — set mode, show overlay immediately, then minimize
+                  preferencesManager.alertRunMode = AlertRunMode.backgroundOverlay;
+                  ref.read(prefsRevisionProvider.notifier).state++;
+                  ref.read(drivingSessionProvider.notifier).syncOverlayNow();
+                  await Future.delayed(const Duration(milliseconds: 50));
+                  if (context.mounted) {
+                    await SystemUi.moveTaskToBack();
                   }
                 },
                 child: const Text('Go'),

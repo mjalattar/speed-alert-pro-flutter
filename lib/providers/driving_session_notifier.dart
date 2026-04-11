@@ -208,12 +208,43 @@ class DrivingSessionNotifier extends StateNotifier<DrivingSessionState> {
       if (_useAndroidFused()) {
         unawaited(FusedDrivingLocation.setPaused(false));
       }
+      if (!visible && preferencesManager.alertRunMode == AlertRunMode.backgroundOverlay) {
+        syncOverlayNow();
+      }
       return;
     }
     proc.setPipelinePaused(!visible);
     if (_useAndroidFused()) {
       unawaited(FusedDrivingLocation.setPaused(!visible));
     }
+    if (!visible) {
+      unawaited(OverlayPlatformChannel.hide());
+    }
+  }
+
+  /// Push current speed/limit to the overlay immediately.
+  void syncOverlayNow() {
+    final pm = ref.read(preferencesProvider).preferencesManager;
+    final inForeground = ref.read(appForegroundVisibleProvider);
+    final speed = state.speedMph;
+    final limit = state.limitMph;
+    final threshold = pm.alertThresholdMph;
+    final lim = limit;
+    final suppressLowLimit = pm.suppressAlertsWhenUnder15Mph &&
+        lim != null &&
+        lim > 0 &&
+        lim < kSuppressAlertsWhenPostedLimitBelowMph;
+    final isSpeeding = !suppressLowLimit &&
+        lim != null &&
+        lim > 0 &&
+        speed > lim + threshold;
+    unawaited(OverlayPlatformChannel.sync(
+      preferencesManager: pm,
+      appInForeground: inForeground,
+      speedMph: speed,
+      limitMph: limit,
+      isSpeeding: isSpeeding,
+    ));
   }
 
   void _syncVendorMphFromCaches() {

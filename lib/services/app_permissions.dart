@@ -6,6 +6,8 @@ import 'package:permission_handler/permission_handler.dart' as ph;
 class AppPermissions {
   AppPermissions._();
 
+  /// Ensures we have location permission (at least "while in use").
+  /// On modern Android, "while in use" is sufficient for background/overlay modes.
   static Future<bool> ensureLocationPermission() async {
     var perm = await Geolocator.checkPermission();
     if (perm == LocationPermission.denied) {
@@ -15,26 +17,9 @@ class AppPermissions {
         perm == LocationPermission.denied) {
       return false;
     }
-    if (perm == LocationPermission.whileInUse) {
-      await _requestBackgroundLocation();
-    }
-    return true;
-  }
-
-  static Future<bool> _requestBackgroundLocation() async {
-    if (!Platform.isAndroid) return true;
-
-    final status = await ph.Permission.locationAlways.status;
-    if (status.isGranted) return true;
-
-    final result = await ph.Permission.locationAlways.request();
-    return result.isGranted;
-  }
-
-  static Future<bool> isBackgroundLocationGranted() async {
-    if (!Platform.isAndroid) return true;
-    final status = await ph.Permission.locationAlways.status;
-    return status.isGranted;
+    // Accept both "whileInUse" and "always" as sufficient
+    return perm == LocationPermission.whileInUse ||
+        perm == LocationPermission.always;
   }
 
   static Future<bool> isBatteryOptimizationExempt() async {

@@ -51,6 +51,16 @@ class MainActivity : FlutterActivity() {
             }
         }
 
+        MethodChannel(messenger, "speed_alert_pro/system_ui").setMethodCallHandler { call, result ->
+            when (call.method) {
+                "moveTaskToBack" -> {
+                    moveTaskToBack(true)
+                    result.success(null)
+                }
+                else -> result.notImplemented()
+            }
+        }
+
         MethodChannel(messenger, "speed_alert_pro/speed_alert_prefs").setMethodCallHandler { call, result ->
             if (call.method != "commitStringMap") {
                 result.notImplemented()

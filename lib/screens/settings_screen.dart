@@ -2,12 +2,12 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:geolocator/geolocator.dart';
 
 import '../config/app_config.dart';
 import '../core/constants.dart';
 import '../providers/app_providers.dart';
 import '../services/app_permissions.dart';
-import '../services/overlay_permission_platform.dart';
 import '../widgets/simulation_destination_settings.dart';
 
 class SettingsScreen extends ConsumerWidget {
@@ -229,48 +229,59 @@ const Divider(),
     );
   }
 
+  /// Returns:
+  /// - `true`  → all location + battery permissions handled (granted or skipped)
+  /// - `false` → location permission was denied (cannot proceed)
   static Future<bool> _requestBackgroundPermissions(BuildContext context) async {
-    final bgLocationGranted = await AppPermissions.isBackgroundLocationGranted();
-
-    if (!bgLocationGranted) {
-      if (context.mounted) {
-        final proceed = await showDialog<bool>(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            title: const Text('Background Location'),
-            content: const Text(
-              'Speed Alert Pro needs "Allow all the time" location access to alert you about speed limits while driving with the screen off.\n\n'
-              'On the next screen, select "Allow all the time".',
-            ),
-            actions: [
-              TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
-              TextButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Continue')),
-            ],
+    // Step 1: Location permission
+    var perm = await Geolocator.checkPermission();
+    if (perm == LocationPermission.denied || perm == LocationPermission.deniedForever) {
+      if (!context.mounted) return false;
+      final proceed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Location Access'),
+          content: const Text(
+            'Speed Alert Pro needs location access to monitor your speed while driving.\n\n'
+            'Please select "Allow while using the app".',
           ),
-        );
-        if (proceed != true) return false;
-        await AppPermissions.ensureLocationPermission();
+          actions: [
+            TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
+            TextButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Continue')),
+          ],
+        ),
+      );
+      if (proceed != true) return false;
+      final result = await AppPermissions.ensureLocationPermission();
+      if (!result) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Location permission is required')),
+          );
+        }
+        return false;
       }
     }
 
+    // Step 2: Battery optimization
     final batteryExempt = await AppPermissions.isBatteryOptimizationExempt();
     if (!batteryExempt) {
-      if (context.mounted) {
-        final proceed = await showDialog<bool>(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            title: const Text('Unrestricted Battery'),
-            content: const Text(
-              'For reliable background alerts, allow Speed Alert Pro to run without battery restrictions.\n\n'
-              'On the next screen, select "Allow".',
-            ),
-            actions: [
-              TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
-              TextButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Continue')),
-            ],
+      if (!context.mounted) return true;
+      final proceed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Unrestricted Battery'),
+          content: const Text(
+            'For reliable background alerts, allow Speed Alert Pro to run without battery restrictions.\n\n'
+            'On the next screen, select "Allow".',
           ),
-        );
-        if (proceed != true) return false;
+          actions: [
+            TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
+            TextButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Continue')),
+          ],
+        ),
+      );
+      if (proceed == true) {
         await AppPermissions.requestBatteryOptimizationExemption();
       }
     }
