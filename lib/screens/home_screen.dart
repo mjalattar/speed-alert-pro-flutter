@@ -7,14 +7,13 @@ import '../providers/app_providers.dart';
 import '../providers/driving_session_notifier.dart';
 import '../services/overlay_permission_platform.dart';
 import '../services/preferences_manager.dart';
-import '../screens/settings_screen.dart';
 import '../screens/testing_screen.dart';
 import '../widgets/speed_session_summary_card.dart';
 import '../core/constants.dart';
 import '../config/app_config.dart';
-import '../services/app_permissions.dart';
 import '../services/system_ui.dart';
 import 'package:flutter/services.dart';
+import '../services/permission_request.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -75,17 +74,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               }
             },
           ),
-          IconButton(
-            icon: const Icon(Icons.settings),
-            tooltip: 'Settings',
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => const SettingsScreen(),
-                ),
-              );
-            },
-          ),
         ],
       ),
       body: SingleChildScrollView(
@@ -98,6 +86,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   preferencesManager.resolvedPrimarySpeedLimitProviderDisplayName,
               isTestingTab: false,
               isSimulating: drive.isSimulating,
+              isTracking: drive.isTracking,
               gpsSpeedMph: drive.speedMph,
               simulatedSpeedMph: drive.simulatedSpeedMph,
               limitMph: drive.limitMph,
@@ -156,17 +145,39 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 ),
               ),
             ],
-            if (drive.permissionDenied) ...[
-              const SizedBox(height: 8),
-              const Text(
-                'Location permission is required. Enable it in system settings.',
-              ),
-              const SizedBox(height: 4),
-              OutlinedButton(
-                onPressed: () => AppPermissions.openSettings(),
-                child: const Text('Open Settings'),
-              ),
-            ],
+            ref.watch(locationServiceEnabledProvider).when(
+              data: (enabled) {
+                if (!enabled && drive.isTracking) {
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(
+                      'GPS is off. Enable location services to continue tracking.',
+                      style: TextStyle(color: Theme.of(context).colorScheme.error),
+                    ),
+                  );
+                }
+                return const SizedBox.shrink();
+              },
+              loading: () => const SizedBox.shrink(),
+              error: (_, __) => const SizedBox.shrink(),
+            ),
+            ref.watch(connectivityProvider).when(
+              data: (connected) {
+                if (!connected && drive.isTracking) {
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(
+                      'Internet is off. Some speed limits may not load.',
+                      style: TextStyle(color: Theme.of(context).colorScheme.error),
+                    ),
+                  );
+                }
+                return const SizedBox.shrink();
+              },
+              loading: () => const SizedBox.shrink(),
+              error: (_, __) => const SizedBox.shrink(),
+            ),
+            
             const SizedBox(height: 16),
             Text(
               'Alert mode',
@@ -191,7 +202,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               subtitle: const Text('Audible speed alerts even when using other apps'),
               secondary: FilledButton.tonal(
                 onPressed: () async {
-                  final ok = await SettingsScreen.requestBackgroundPermissions(context);
+                  final ok = await PermissionRequest.requestBackgroundPermissions(context);
                   if (!context.mounted) return;
                   if (!ok) {
                     preferencesManager.alertRunMode = AlertRunMode.normal;
@@ -221,7 +232,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               subtitle: const Text('Floating speed HUD and alerts over other apps'),
               secondary: FilledButton.tonal(
                 onPressed: () async {
-                  final ok = await SettingsScreen.requestBackgroundPermissions(context);
+                  final ok = await PermissionRequest.requestBackgroundPermissions(context);
                   if (!context.mounted) return;
                   if (!ok) {
                     preferencesManager.alertRunMode = AlertRunMode.normal;
@@ -276,6 +287,66 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   ref.read(prefsRevisionProvider.notifier).state++;
                 },
               ),
+            ),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Overspeed threshold: +${preferencesManager.alertThresholdMph} mph'),
+                    Slider(
+                      value: preferencesManager.alertThresholdMph.toDouble(),
+                      min: 0,
+                      max: 20,
+                      divisions: 20,
+                      label: '${preferencesManager.alertThresholdMph}',
+                      onChanged: (x) {
+                        preferencesManager.alertThresholdMph = x.round();
+                        ref.read(prefsRevisionProvider.notifier).state++;
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Appearance',
+              style: Theme.of(context).textTheme.titleSmall,
+            ),
+            RadioListTile<int>(
+              title: const Text('System'),
+              value: AppThemeMode.auto,
+              groupValue: preferencesManager.uiThemeMode,
+              onChanged: (v) {
+                if (v != null) {
+                  preferencesManager.uiThemeMode = v;
+                  ref.read(prefsRevisionProvider.notifier).state++;
+                }
+              },
+            ),
+            RadioListTile<int>(
+              title: const Text('Light'),
+              value: AppThemeMode.light,
+              groupValue: preferencesManager.uiThemeMode,
+              onChanged: (v) {
+                if (v != null) {
+                  preferencesManager.uiThemeMode = v;
+                  ref.read(prefsRevisionProvider.notifier).state++;
+                }
+              },
+            ),
+            RadioListTile<int>(
+              title: const Text('Dark'),
+              value: AppThemeMode.dark,
+              groupValue: preferencesManager.uiThemeMode,
+              onChanged: (v) {
+                if (v != null) {
+                  preferencesManager.uiThemeMode = v;
+                  ref.read(prefsRevisionProvider.notifier).state++;
+                }
+              },
             ),
           ],
         ),

@@ -1,6 +1,8 @@
 import 'dart:async';
 
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../config/app_config.dart';
@@ -119,4 +121,16 @@ final entitlementAccessProvider = FutureProvider.autoDispose<bool>((ref) async {
 
   // If auth-check failed (offline), allow access to avoid blocking the user.
   return true;
+});
+
+/// Connectivity status - true if internet is available
+final connectivityProvider = StreamProvider<bool>((ref) {
+  return Connectivity().onConnectivityChanged.map((results) {
+    return results.any((r) => r != ConnectivityResult.none);
+  });
+});
+
+/// Location service enabled status
+final locationServiceEnabledProvider = FutureProvider<bool>((ref) async {
+  return await Geolocator.isLocationServiceEnabled();
 });

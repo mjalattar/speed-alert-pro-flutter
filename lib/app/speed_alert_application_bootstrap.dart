@@ -32,12 +32,7 @@ Future<void> runSupabaseAuthBootstrap() async {
       debugPrint('[AUTH BOOTSTRAP] Existing session: uid=${session.user.id}, isAnonymous=${session.user.isAnonymous}');
     }
   } catch (e, st) {
-    developer.log(
-      'Supabase auth bootstrap failed',
-      name: 'SpeedAlertApp',
-      error: e,
-      stackTrace: st,
-    );
+    debugPrint('Supabase auth bootstrap failed: $e\n$st');
   }
 
   _backgroundSync();

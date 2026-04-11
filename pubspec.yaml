@@ -21,6 +21,7 @@ dependencies:
   google_maps_flutter: ^2.9.0
   path_provider: ^2.1.4
   flutter_dotenv: ^6.0.0
+  connectivity_plus: ^7.1.1
 
 dev_dependencies:
   flutter_test:

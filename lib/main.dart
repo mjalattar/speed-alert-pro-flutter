@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:purchases_flutter/purchases_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import 'app/speed_alert_application_bootstrap.dart';
 import 'app/speed_alert_app.dart';
 import 'config/app_config.dart';
 import 'config/load_app_env.dart';

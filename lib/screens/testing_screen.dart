@@ -10,6 +10,7 @@ import '../engine/shared/geo_coordinate.dart';
 import '../logging/speed_limit_api_session_counter.dart';
 import '../providers/app_providers.dart';
 import '../providers/driving_session_notifier.dart';
+import '../widgets/simulation_destination_settings.dart';
 import '../widgets/speed_session_summary_card.dart';
 
 /// Testing tab: speed/limit card, map, and road-test simulator.
@@ -122,7 +123,7 @@ class _TestingScreenState extends ConsumerState<TestingScreen> {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text(
-                'Enable HERE Maps in Settings, or enable Remote and turn on the Remote API.',
+                'Enable HERE Maps or Remote API in the APIs section below.',
               ),
             ),
           );
@@ -166,16 +167,17 @@ class _TestingScreenState extends ConsumerState<TestingScreen> {
           onPressed: () => Navigator.of(context).pop(),
         ),
       ),
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-            child: SpeedSessionSummaryCard(
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SpeedSessionSummaryCard(
               primaryProviderLabel:
                   preferencesManager.resolvedPrimarySpeedLimitProviderDisplayName,
               isTestingTab: true,
               isSimulating: drive.isSimulating,
+              isTracking: drive.isTracking,
               gpsSpeedMph: drive.speedMph,
               simulatedSpeedMph: drive.simulatedSpeedMph,
               limitMph: drive.limitMph,
@@ -197,137 +199,255 @@ class _TestingScreenState extends ConsumerState<TestingScreen> {
               suppressAlertsUnder15Mph:
                   preferencesManager.suppressAlertsWhenUnder15Mph,
             ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-            child: SizedBox(
+            const SizedBox(height: 12),
+            SizedBox(
               height: mapHeight,
               child: ClipRRect(
                 borderRadius: const BorderRadius.vertical(
                   bottom: Radius.circular(12),
                 ),
                 child: GoogleMap(
-                        initialCameraPosition: const CameraPosition(
-                          target: _leagueCity,
-                          zoom: 12,
-                        ),
-                        myLocationEnabled: true,
-                        myLocationButtonEnabled: true,
-                        mapToolbarEnabled: false,
-                        polylines: polylines,
-                        markers: markers,
-                        onMapCreated: (c) {
-                          _mapController = c;
-                          final r =
-                              ref.read(drivingSessionProvider).simulationRoutePolyline;
-                          if (r.length >= 2) {
-                            _scheduleFitSimulationRoute(r);
-                          }
-                        },
-                      ),
+                  initialCameraPosition: const CameraPosition(
+                    target: _leagueCity,
+                    zoom: 12,
+                  ),
+                  myLocationEnabled: true,
+                  myLocationButtonEnabled: true,
+                  mapToolbarEnabled: false,
+                  polylines: polylines,
+                  markers: markers,
+                  onMapCreated: (c) {
+                    _mapController = c;
+                    final r =
+                        ref.read(drivingSessionProvider).simulationRoutePolyline;
+                    if (r.length >= 2) {
+                      _scheduleFitSimulationRoute(r);
+                    }
+                  },
+                ),
               ),
             ),
-          ),
-          Expanded(
-            child: ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Text(
-                          'Road Test Simulator',
-                          style: Theme.of(context).textTheme.titleMedium,
-                        ),
-                        const SizedBox(height: 4),
-                        ValueListenableBuilder<int>(
-                          valueListenable:
-                              SpeedLimitApiSessionCounter.hereRoutingTestSessionCount,
-                          builder: (context, hereReqCount, _) {
-                            return Text(
-                              'HERE speed-limit API requests (this test): $hereReqCount',
-                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                            );
-                          },
-                        ),
-                        const SizedBox(height: 4),
-                        ValueListenableBuilder<int>(
-                          valueListenable:
-                              SpeedLimitApiSessionCounter.remoteEdgeTestSessionCount,
-                          builder: (context, remoteReqCount, _) {
-                            return Text(
-                              'Remote (Supabase Edge) requests (this test): $remoteReqCount',
-                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                            );
-                          },
-                        ),
-                        if (drive.isSimulating) ...[
-                          const SizedBox(height: 12),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(
-                                'Current sim speed: ${drive.simulatedSpeedMph} mph',
-                                style: Theme.of(context).textTheme.bodyLarge,
+            const SizedBox(height: 16),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      'APIs',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Main speed limit (display + alerts)',
+                      style: Theme.of(context).textTheme.titleSmall,
+                    ),
+                    RadioListTile<int>(
+                      title: const Text('HERE Maps'),
+                      value: SpeedLimitPrimaryProvider.here,
+                      groupValue: preferencesManager.primarySpeedLimitProvider,
+                      onChanged: (v) {
+                        if (v != null) {
+                          preferencesManager.primarySpeedLimitProvider = v;
+                          preferencesManager.isHereApiEnabled = true;
+                          ref.read(prefsRevisionProvider.notifier).state++;
+                        }
+                      },
+                    ),
+                    RadioListTile<int>(
+                      title: const Text('TomTom'),
+                      value: SpeedLimitPrimaryProvider.tomTom,
+                      groupValue: preferencesManager.primarySpeedLimitProvider,
+                      onChanged: (v) {
+                        if (v != null) {
+                          preferencesManager.primarySpeedLimitProvider = v;
+                          preferencesManager.isTomTomApiEnabled = true;
+                          ref.read(prefsRevisionProvider.notifier).state++;
+                        }
+                      },
+                    ),
+                    RadioListTile<int>(
+                      title: const Text('Mapbox'),
+                      value: SpeedLimitPrimaryProvider.mapbox,
+                      groupValue: preferencesManager.primarySpeedLimitProvider,
+                      onChanged: (v) {
+                        if (v != null) {
+                          preferencesManager.primarySpeedLimitProvider = v;
+                          preferencesManager.isMapboxApiEnabled = true;
+                          ref.read(prefsRevisionProvider.notifier).state++;
+                        }
+                      },
+                    ),
+                    RadioListTile<int>(
+                      title: const Text('Remote'),
+                      subtitle: AppConfig.useRemoteHere
+                          ? const Text('Uses your Supabase Edge pipeline when enabled below.')
+                          : const Text(
+                              'Configure Supabase (see README) to use Remote as primary.',
+                            ),
+                      value: SpeedLimitPrimaryProvider.remote,
+                      groupValue: preferencesManager.primarySpeedLimitProvider,
+                      onChanged: (v) {
+                        if (v == null) return;
+                        if (!AppConfig.useRemoteHere) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                'Add your Supabase URL to local.properties as '
+                                'supabase.url=https://YOUR-REF.supabase.co then rebuild the native app, '
+                                'or pass --dart-define=SUPABASE_URL=... for Flutter (see README).',
                               ),
-                              Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  IconButton(
-                                    onPressed: () =>
-                                        notifier.adjustSimulatedSpeed(-5),
-                                    icon: const Icon(Icons.remove),
-                                  ),
-                                  IconButton(
-                                    onPressed: () =>
-                                        notifier.adjustSimulatedSpeed(5),
-                                    icon: const Icon(Icons.add),
-                                  ),
-                                ],
+                            ),
+                          );
+                          return;
+                        }
+                        preferencesManager.primarySpeedLimitProvider = v;
+                        preferencesManager.isRemoteApiEnabled = true;
+                        ref.read(prefsRevisionProvider.notifier).state++;
+                      },
+                    ),
+                    Text(
+                      'API providers (choosing a main source above enables that provider here)',
+                      style: Theme.of(context).textTheme.titleSmall,
+                    ),
+                    SwitchListTile(
+                      title: const Text('HERE Maps'),
+                      value: preferencesManager.isHereApiEnabled,
+                      onChanged: (v) {
+                        preferencesManager.isHereApiEnabled = v;
+                        ref.read(prefsRevisionProvider.notifier).state++;
+                      },
+                    ),
+                    SwitchListTile(
+                      title: const Text('TomTom'),
+                      subtitle: const Text('TomTom API key via --dart-define (see README).'),
+                      value: preferencesManager.isTomTomApiEnabled,
+                      onChanged: (v) {
+                        preferencesManager.isTomTomApiEnabled = v;
+                        ref.read(prefsRevisionProvider.notifier).state++;
+                      },
+                    ),
+                    SwitchListTile(
+                      title: const Text('Mapbox'),
+                      subtitle: const Text('Mapbox Directions (public pk. token).'),
+                      value: preferencesManager.isMapboxApiEnabled,
+                      onChanged: (v) {
+                        preferencesManager.isMapboxApiEnabled = v;
+                        ref.read(prefsRevisionProvider.notifier).state++;
+                      },
+                    ),
+                    if (AppConfig.useRemoteHere)
+                      SwitchListTile(
+                        title: const Text('Remote'),
+                        subtitle: const Text('Supabase Edge — required when Remote is the main source.'),
+                        value: preferencesManager.isRemoteApiEnabled,
+                        onChanged: (v) {
+                          preferencesManager.isRemoteApiEnabled = v;
+                          ref.read(prefsRevisionProvider.notifier).state++;
+                        },
+                      ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            const SimulationDestinationSettings(),
+            const SizedBox(height: 8),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      'Road Test Simulator',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: 4),
+                    ValueListenableBuilder<int>(
+                      valueListenable:
+                          SpeedLimitApiSessionCounter.hereRoutingTestSessionCount,
+                      builder: (context, hereReqCount, _) {
+                        return Text(
+                          'HERE speed-limit API requests (this test): $hereReqCount',
+                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                fontWeight: FontWeight.w600,
+                              ),
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 4),
+                    ValueListenableBuilder<int>(
+                      valueListenable:
+                          SpeedLimitApiSessionCounter.remoteEdgeTestSessionCount,
+                      builder: (context, remoteReqCount, _) {
+                        return Text(
+                          'Remote (Supabase Edge) requests (this test): $remoteReqCount',
+                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                fontWeight: FontWeight.w600,
+                              ),
+                        );
+                      },
+                    ),
+                    if (drive.isSimulating) ...[
+                      const SizedBox(height: 12),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Current sim speed: ${drive.simulatedSpeedMph} mph',
+                            style: Theme.of(context).textTheme.bodyLarge,
+                          ),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                onPressed: () =>
+                                    notifier.adjustSimulatedSpeed(-5),
+                                icon: const Icon(Icons.remove),
+                              ),
+                              IconButton(
+                                onPressed: () =>
+                                    notifier.adjustSimulatedSpeed(5),
+                                icon: const Icon(Icons.add),
                               ),
                             ],
                           ),
                         ],
-                        const SizedBox(height: 12),
-                        if (drive.lastError != null) ...[
-                          Text(
-                            drive.lastError!,
-                            style: TextStyle(
-                              color: Theme.of(context).colorScheme.error,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                        ],
-                        FilledButton(
-                          onPressed: () async {
-                            await toggleSimulation();
-                          },
-                          style: FilledButton.styleFrom(
-                            backgroundColor: drive.isSimulating
-                                ? Theme.of(context).colorScheme.error
-                                : Theme.of(context).colorScheme.primary,
-                          ),
-                          child: Text(
-                            drive.isSimulating
-                                ? 'Stop Test'
-                                : 'Start Simulation Test',
-                          ),
+                      ),
+                    ],
+                    const SizedBox(height: 12),
+                    if (drive.lastError != null) ...[
+                      Text(
+                        drive.lastError!,
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.error,
                         ),
-                      ],
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                    FilledButton(
+                      onPressed: () async {
+                        await toggleSimulation();
+                      },
+                      style: FilledButton.styleFrom(
+                        backgroundColor: drive.isSimulating
+                            ? Theme.of(context).colorScheme.error
+                            : Theme.of(context).colorScheme.primary,
+                      ),
+                      child: Text(
+                        drive.isSimulating
+                            ? 'Stop Test'
+                            : 'Start Simulation Test',
+                      ),
                     ),
-                  ),
+                  ],
                 ),
-              ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

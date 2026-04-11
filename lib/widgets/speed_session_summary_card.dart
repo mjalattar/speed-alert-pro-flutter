@@ -10,6 +10,7 @@ class SpeedSessionSummaryCard extends StatefulWidget {
     required this.primaryProviderLabel,
     required this.isTestingTab,
     required this.isSimulating,
+    required this.isTracking,
     required this.gpsSpeedMph,
     required this.simulatedSpeedMph,
     required this.limitMph,
@@ -29,6 +30,7 @@ class SpeedSessionSummaryCard extends StatefulWidget {
 
   final bool isTestingTab;
   final bool isSimulating;
+  final bool isTracking;
   final double gpsSpeedMph;
   final int simulatedSpeedMph;
   final double? limitMph;
@@ -134,9 +136,14 @@ class _SpeedSessionSummaryCardState extends State<SpeedSessionSummaryCard>
     final scheme = Theme.of(context).colorScheme;
 
     final speedLabel = widget.isTestingTab ? 'Simulated speed' : 'Current speed';
-    final speedValueText = widget.isTestingTab
-        ? (widget.isSimulating ? '${widget.simulatedSpeedMph} mph' : '—')
-        : '${widget.gpsSpeedMph.round()} mph';
+    final String speedValueText;
+    if (widget.isTestingTab) {
+      speedValueText = widget.isSimulating ? '${widget.simulatedSpeedMph} mph' : '—';
+    } else if (!widget.isTracking && widget.gpsSpeedMph == 0) {
+      speedValueText = 'Waiting for GPS...';
+    } else {
+      speedValueText = '${widget.gpsSpeedMph.round()} mph';
+    }
 
     final lim = widget.limitMph ?? 0;
     final limitText = lim > 0 ? '${lim.round()} mph' : '-- mph';
